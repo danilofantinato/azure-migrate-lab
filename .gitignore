@@ -1,0 +1,27 @@
+# Generated Bicep and ARM artifacts
+infra/main.json
+infra/*.parameters.json
+
+# Local deployment parameters and environment files
+*.local.bicepparam
+scripts/*.local.json
+.env
+.env.*
+
+# Keys, certificates, and appliance artifacts
+ssh/*
+!ssh/README.md
+*.key
+*.pem
+*.pfx
+*.p12
+*.cer
+*.crt
+*.ppk
+*appliance-key*
+*registration-key*
+*passphrase*
+
+# Azure CLI and editor-local files
+.azure/commands/
+.vscode/settings.json

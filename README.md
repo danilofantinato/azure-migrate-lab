@@ -1,49 +1,54 @@
 # Azure Migrate Physical-Server Simulation Lab
 
-This repository provisions a two-subscription Azure lab for learning Azure Migrate physical/other-cloud discovery, assessment, and simplified agent-based migration. Azure virtual machines provide the lab infrastructure and directly simulate one Windows and one Linux physical server.
+This repository provisions a two-subscription Azure lab for learning Azure Migrate physical/other-cloud discovery, assessment, and simplified agent-based migration. Azure hosts the lab infrastructure, while the source workloads run as ordinary nested Hyper-V guests so that they are discovered and migrated as physical or other servers rather than as Azure virtual machines.
 
 > **Lab disclaimer**
 >
-> This lab uses Azure virtual machines to simulate physical or other-cloud servers.
+> This lab uses nested virtualization in Azure to simulate physical or other-cloud servers.
 >
-> The use of Azure VMs as source machines in this lab is for testing and educational simulation purposes.
+> The nested guests and routing arrangement are for testing and education. They are not a production source topology or a statement of support for nested virtualization in production migrations.
 >
 > It should not be interpreted as demonstrating Azure-to-Azure migration through Azure Migrate as a supported production migration architecture.
 >
 > The objective is to reproduce and understand the Azure Migrate discovery, assessment, Mobility Service, agent-based replication, test migration, and migration workflows normally associated with physical servers and servers running in other environments.
 
-## Documented Limitation
+## Lab Boundary
 
-Azure Site Recovery currently states that failover of Azure virtual machines treated as physical machines with Marketplace image disks is not supported. This lab therefore has two result boundaries:
-
-- Discovery, software inventory, performance collection, and assessment are expected learning paths.
-- Mobility Service, replication, test migration, and final migration are best-effort experiments and might stop at the documented Marketplace-image limitation.
-
-See [Support matrix for disaster recovery of VMware VMs and physical servers](https://learn.microsoft.com/azure/site-recovery/vmware-physical-azure-support-matrix#replicated-machines).
+The two source machines are installed from ordinary Windows and Ubuntu media inside Hyper-V. They do not have Azure VM Agent, Azure Instance Metadata Service (IMDS) is blocked, and they should not identify as Azure VMs. This removes the former direct-Azure Marketplace-disk limitation from the expected lab path. Azure Migrate and Site Recovery support requirements still apply to the guest operating system, kernel, credentials, network connectivity, and Mobility Service version.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     accTitle: Two-subscription Azure Migrate lab architecture
-    accDescr: Shows discovery and replication appliances with two private source workloads in the source subscription, and isolated test and final subnets with Azure Migrate in the target subscription.
+    accDescr: Shows an administrator reaching three CIDR-restricted Azure Windows VMs while discovery and replication appliances reach two nested Hyper-V source guests through a routed host.
 
     subgraph SourceSub[Simulated source subscription]
         Admin[Administrator CIDR]
-        Discovery[Discovery appliance]
-        Replication[Simplified replication appliance]
-        Windows[Windows source-win01]
-        Linux[Linux source-linux01]
-        SourceNat[Source NAT Gateway]
+        Discovery[Discovery appliance 10.10.1.10]
+        Replication[Replication appliance 10.10.1.20]
+        Route[UDR for 10.10.3.0/24]
+        Host[Hyper-V host 10.10.2.10]
+        Routed[NestedRouted 10.10.3.1/24]
+        GuestNat[NestedNat 192.168.250.1/24]
+        Windows[Windows guest 10.10.3.10]
+        Linux[Linux guest 10.10.3.20]
+        Internet[Internet through host WinNAT]
 
         Admin -->|RDP and appliance UI| Discovery
         Admin -->|RDP| Replication
-        Discovery -->|WinRM| Windows
-        Discovery -->|SSH| Linux
+        Admin -->|RDP| Host
+        Discovery --> Route
+        Replication --> Route
+        Route -->|Next hop 10.10.2.10| Host
+        Host --> Routed
+        Routed --> Windows
+        Routed --> Linux
         Windows -->|Mobility Service| Replication
         Linux -->|Mobility Service| Replication
-        Windows --> SourceNat
-        Linux --> SourceNat
+        Windows --> GuestNat
+        Linux --> GuestNat
+        GuestNat --> Internet
     end
 
     subgraph TargetSub[Migration target subscription]
@@ -63,13 +68,13 @@ Discovery and migration remain separate workflows.
 ```mermaid
 flowchart TB
     accTitle: Discovery and migration workflow separation
-    accDescr: Compares the agentless discovery and assessment path with the Mobility Service and simplified replication path used for migration.
+    accDescr: Compares discovery and assessment with Mobility Service replication for nested guests registered as physical or other servers.
 
-    SourceA[Source server] --> DiscoveryAppliance[Discovery appliance]
+    GuestA[Nested guest by routed IP] --> DiscoveryAppliance[Discovery appliance]
     DiscoveryAppliance --> Assessment[Discovery and Assessment]
     Assessment --> Recommendation[Performance-based SKU recommendation]
 
-    SourceB[Source server] --> Mobility[Mobility Service]
+    GuestB[Nested guest by routed IP] --> Mobility[Mobility Service]
     Mobility --> ReplicationAppliance[Simplified replication appliance]
     ReplicationAppliance --> ReplicatedDisks[Replicated managed disks]
     ReplicatedDisks --> TestMigration[Test migration]
@@ -82,10 +87,24 @@ flowchart TB
 
 | Subscription | Automated resources |
 | --- | --- |
-| Simulated source | Resource group, segmented VNet, NSGs, NAT Gateway, appliance public IPs, discovery appliance VM, simplified replication appliance VM, Windows source VM, Linux source VM, data disks, sample IIS/Nginx workloads, and shutdown schedules |
+| Simulated source | Resource group, segmented VNet, NSGs, route table, NAT Gateway, public IPs for the discovery, replication, and Hyper-V VMs, discovery appliance VM, simplified replication appliance VM, Windows Server 2022 Hyper-V host with IP forwarding and a 512-GB guest disk, nested Windows and Linux guests, sample IIS/Nginx workloads, and shutdown schedules for the three Azure VMs |
 | Migration target | Resource group, target VNet, isolated test/final subnets, NSGs, optional NAT Gateway, and optionally a full Azure Migrate hub project with server assessment, discovery, and migration solutions |
 
 The root deployment accepts both subscription IDs and deploys subscription-scoped modules to each subscription. The VNets are intentionally not peered.
+
+The source network is deliberately split:
+
+| Component | Address or prefix | Purpose |
+| --- | --- | --- |
+| Discovery appliance | `10.10.1.10` | Physical/other-server discovery and assessment |
+| Replication appliance | `10.10.1.20` | Mobility Service push and replication |
+| Hyper-V host | `10.10.2.10` | Azure VM with Standard security, NIC IP forwarding, and CIDR-restricted public RDP |
+| `NestedRouted` switch | `10.10.3.1/24` | Appliance-to-guest discovery and replication path |
+| `source-win01` | Routed `10.10.3.10`; NAT `192.168.250.10` | Nested Windows Server source |
+| `source-linux01` | Routed `10.10.3.20`; NAT `192.168.250.20` | Nested Ubuntu source |
+| `NestedNat` switch | `192.168.250.1/24` | Guest outbound path through host WinNAT |
+
+The appliance subnet has a user-defined route for `10.10.3.0/24` with next hop `10.10.2.10`. The host forwards traffic to `NestedRouted`; guest internet traffic uses the separate `NestedNat` adapters and host WinNAT. IMDS at `169.254.169.254` is blocked in both guests.
 
 ## Manual Azure Migrate Steps
 
@@ -105,22 +124,23 @@ The following remain guided checkpoints because they use portal-generated artifa
 - Permission to create subscription deployments and resource groups in both subscriptions
 - Azure Migrate Owner or a higher role in the target subscription for project creation
 - Current Azure CLI with Bicep support
-- Sufficient quota for at least 20 vCPUs in the selected region and VM families
-- An SSH public key
+- Source quota for at least 40 vCPUs across the relevant regional and VM-family quotas
+- Target quota for the initial 4-vCPU migrated-workload assumption
 - A public administrator IPv4 CIDR, preferably one `/32`
 
 The default appliances use:
 
 - Discovery: `Standard_D8as_v7`, 8 vCPUs and 32 GB RAM
 - Replication: `Standard_D16as_v7`, 8 physical cores/16 vCPUs and 64 GB RAM, plus a 640-GB cache disk
+- Nested Hyper-V host: `Standard_D16as_v7`, 16 vCPUs and 64 GB RAM, Standard security, IP forwarding, and a 512-GB guest disk
+
+The deployment validates the configured profile and supported fallback profiles against nested-virtualization support, SKU restrictions, regional quota, and family quota. A validated equivalent host can replace `Standard_D16as_v7` when the default is unavailable.
 
 ## Configure and Deploy
 
 ### Run the resumable setup
 
-The primary workflow deploys infrastructure, verifies the Azure Migrate project,
-installs both appliances, pauses at the three required portal/configuration
-checkpoints, and runs end-to-end validation:
+The primary workflow deploys infrastructure, prepares the nested guests, verifies the Azure Migrate project, installs both appliances, pauses at the required portal/configuration checkpoints, and runs end-to-end validation:
 
 `pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-lab.ps1`
 
@@ -132,9 +152,9 @@ Select regions explicitly when needed:
 
 `pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-lab.ps1 -SourceLocation eastus2 -TargetLocation westus2 -ApproveDeployment`
 
-This switch bypasses only the final deployment confirmation. The generated
-Windows administrator/Linux root password acknowledgement and Microsoft appliance registration
-checkpoints remain interactive.
+This switch bypasses only the final deployment confirmation. Password acknowledgements and Microsoft appliance registration checkpoints remain interactive.
+
+Step 1 displays a one-time deployment password for the three Azure Windows VMs: the discovery appliance, replication appliance, and Hyper-V host. Step 2 displays a different one-time 24-character alphanumeric nested guest password. Both guest `labadmin` accounts and Linux `root` use the nested guest password. The deployment password is never used for nested guest discovery or replication credentials.
 
 Progress is stored in the Git-ignored
 `scripts/setup-lab.state.local.json` file. The state contains only step names,
@@ -152,8 +172,20 @@ Inspect or resume at a specific stage:
 
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-lab.ps1 -Status
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-lab.ps1 -FromStep VerifyProject
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-lab.ps1 -FromStep PrepareNestedGuests
 ```
+
+The resumable step names are:
+
+1. `DeployInfrastructure`
+2. `PrepareNestedGuests`
+3. `VerifyProject`
+4. `InstallDiscovery`
+5. `RegisterDiscovery`
+6. `CreateMigrationResources`
+7. `InstallReplication`
+8. `RegisterReplication`
+9. `ValidateLab`
 
 Use `-ResetState` to discard local workflow progress after typing `RESET`.
 Completed Azure resources are not deleted or changed by that option.
@@ -177,12 +209,12 @@ On the first run, the script saves all non-secret answers to `scripts/deploy-lab
 The script performs this complete flow:
 
 1. Asks for source and target subscription IDs.
-2. Asks for the administrator CIDR and whether to create a lab SSH key or use an existing public key.
-3. Prompts independently for source and target regions, resource prefix, administrator name, and preferred VM sizes.
+2. Asks for the administrator CIDR.
+3. Prompts independently for source and target regions, resource prefix, administrator name, appliance sizes, Hyper-V host size, and target sizing assumptions.
 4. Prompts for shutdown, target NAT Gateway, and Azure Migrate project options with defaults.
-5. Generates an Azure-compatible 24-character Windows administrator password, displays it once, and waits for `READY` after you store it securely.
-6. Signs in to Azure and registers only required providers that are not already registered.
-7. Evaluates configured VM sizes first, then Dasv7, Dasv6, and Dasv5 profiles; it selects the first profile that passes SKU and quota checks in both selected regions unless sizes were explicitly overridden.
+5. Generates an Azure-compatible 24-character deployment password for the Azure appliances and host, displays it once, and waits for `READY` after you store it securely.
+6. Signs in to Azure, registers `Microsoft.Compute/UseStandardSecurityType` in the source subscription, propagates it through the Compute provider, and registers other required providers that are not already registered.
+7. Evaluates configured VM sizes and supported fallback profiles; it selects the first profile that passes capability, SKU, and quota checks in both selected regions unless sizes were explicitly overridden.
 8. Prints timestamped details for providers, each VM SKU/capability/family, regional quota, family quota, Bicep compilation, ARM validation, and what-if.
 9. Compiles Bicep and runs Azure Resource Manager validation to catch policy and template constraints.
 10. Displays the full what-if preview.
@@ -191,17 +223,52 @@ The script performs this complete flow:
 13. Classifies nested ARM failures and offers validated region or equivalent-SKU recovery for quota/capacity failures.
 14. Clears the password and all temporary lab environment variables before exiting.
 
+After deployment, setup step 2 installs Hyper-V and routing, displays the separate nested guest password once, downloads installation media, and provisions both guests.
+
 Example prompts:
 
 ```text
 Simulated source Azure region [eastus2]:
 Migration target and Azure Migrate region [westus2]:
 Discovery appliance VM size [Standard_D8as_v7]:
+Nested Hyper-V host VM size [Standard_D16as_v7]:
 Enable automatic VM shutdown [Y/n]:
 Deploy target NAT Gateway [y/N]:
 ```
 
 Press **Enter** to accept any value shown in brackets.
+
+### Prepare the Hyper-V host and nested guests
+
+`setup-lab.ps1` runs this automatically as `PrepareNestedGuests`. To run the stage independently:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass `
+    -File .\scripts\prepare-hyperv-host.ps1 `
+    -ConfigFile .\scripts\deploy-lab.local.json `
+    -DeploymentName azure-migrate-lab
+```
+
+The public defaults are the Microsoft Windows Server 2022 Evaluation fwlink, Canonical's pinned generic Ubuntu 22.04 cloud image, and a pinned Windows qemu-img package. The worker converts the generic qcow2 image to dynamic VHDX, then first-boot customization uses a NoCloud CIDATA disk. This avoids both interactive Ubuntu installer prompts and the Azure-specific image's Azure datasource dependency. Override the HTTPS URIs when a public endpoint changes or an approved mirror is required:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass `
+    -File .\scripts\prepare-hyperv-host.ps1 `
+    -WindowsServerIsoUri '<https-windows-iso-uri>' `
+    -UbuntuCloudImageUri '<https-ubuntu-qcow2-image-uri>' `
+    -QemuImgArchiveUri '<https-qemu-img-zip-uri>' `
+    -WindowsServerIsoSha256 '<optional-64-hex-sha256>' `
+    -UbuntuCloudImageSha256 '<64-hex-sha256>' `
+    -QemuImgArchiveSha256 '<64-hex-sha256>'
+```
+
+`-UbuntuVhdArchiveUri` and `-UbuntuVhdArchiveSha256` remain aliases for compatibility. The pinned Ubuntu and qemu-img defaults include SHA256 values. Public download URLs and redirect targets can drift; verify the publisher, expected media or tool version, licensing terms, and hash before using a changed URL. Windows Server Evaluation is time-limited evaluation software and must be used according to Microsoft's evaluation license; it is not a production license.
+
+The script returns immediately when the host status is already `Ready`. Use `-Force` to rebuild after reviewing the current host state; it can recreate nested guest artifacts. Provisioning runs as a scheduled task on the host and the caller polls for up to eight hours by default; override the bounded wait with `-ProvisioningTimeoutHours` when needed.
+
+Public media and tool downloads use native `curl.exe` with redirect handling, retries, stall detection, and HTTP range resume. Interrupted `.partial` files are retained, so a later non-`Force` run continues instead of restarting the Windows ISO, Ubuntu cloud image, or qemu-img package download.
+
+While provisioning runs, the console refreshes every 30 seconds with the current phase, scheduled-task state and last result, cached or partial media sizes, and both nested VM states. Long phases are reported separately for Windows and Ubuntu downloads, Windows media validation and image application, Linux qcow2-to-VHDX conversion, guest startup, and endpoint readiness probes.
 
 ### Install the discovery appliance software
 
@@ -259,17 +326,17 @@ credentials are never supplied to the script or stored in the repository.
 
 #### Add credentials
 
-- Add `labwindows` as **Windows Server**, using local user `labadmin` and the deployment password.
-- Add `lablinux` as **Linux Server (SSH key-based)**, using user `labadmin` and `ssh/azure-migrate-lab`.
+- Add `labwindows` as **Windows Server**, using local user `labadmin` and the nested guest password displayed in step 2.
+- Add `lablinux` as **Linux password**, using local user `labadmin` and the same nested guest password.
 
-Friendly names cannot contain `-`. The Linux private key must be OpenSSH format without a passphrase.
+Friendly names cannot contain `-`. Credentials remain encrypted on the appliance and are not stored by the setup scripts.
 
 #### Add servers
 
 | OS | VM | Private IP | Credential |
 | --- | --- | --- | --- |
-| Windows | `source-win01` | `10.10.2.10` | `labwindows` |
-| Linux | `source-linux01` | `10.10.2.20` | `lablinux` |
+| Windows | `source-win01` | `10.10.3.10` | `labwindows` |
+| Linux | `source-linux01` | `10.10.3.20` | `lablinux` |
 
 1. Under **Provide physical or virtual server details**, add both rows above.
 2. Save and wait for both connection validations to pass.
@@ -336,19 +403,20 @@ replication VM through the existing CIDR-restricted rule, open Microsoft Azure
 Appliance Configuration Manager locally, and choose **FQDN** connectivity. Keep
 the detected `amig-repl` name and TCP port `9443`, select **Save**, and then
 select **Continue**. Do not choose **NAT IP**: the source machines reach the
-appliance directly over the private VNet, and the public IP is for RDP only.
+appliance over the private routed path through the Hyper-V host, and the public
+IP is for RDP only.
 This connectivity choice cannot be changed after it is saved. Enter the
 portal-generated simplified replication appliance key and complete device-code
 authentication. The discovery inventory can be selected for assessment and
 sizing, but guest credentials are not transferred between appliances. Add
-`source-win01` with `labwindows` (`labadmin`) and `source-linux01` with
-`lablinuxroot` (`root`), both using the one-time deployment password. Bicep
-passes that password to the Linux VMAccess extension through protected settings
-and retains the existing `labadmin` SSH key. Cloud-init and a validated SSH
-drop-in ensure that root/password and public-key authentication are all enabled
-for a fresh deployment. The Windows Public-profile WinRM rule allows only the
-discovery and replication appliance private IPs. Registration keys and source
-credentials are never stored by the script.
+`source-win01` at `10.10.3.10` with `labwindows` (`labadmin`) and
+`source-linux01` at `10.10.3.20` with `lablinuxroot` (`root`), both using the
+one-time nested guest password displayed in step 2. The replication source
+subnet is `10.10.3.0/24`; appliance traffic follows the UDR through Hyper-V host
+`10.10.2.10`. The Windows firewall allows the appliance paths required for
+WinRM, WMI/DCOM, and push installation. Linux enables password-based SSH and
+SFTP for the appliance. Registration keys and source credentials are never
+stored by the scripts.
 
 After the configurator reports successful completion, refresh Azure Migrate and
 open **Migration and modernization > Infrastructure servers > Configuration
@@ -356,16 +424,16 @@ servers**. Step 7 verifies the authoritative connected Site Recovery provider
 and prints its fabric health and heartbeat; it does not rely on a local registry
 flag or expect the provider in the discovery-appliance inventory.
 
-Before enabling replication, deployment automation prepares source push-install
-requirements. Windows allows WMI/DCOM dynamic RPC TCP `49152-65535` only from
-the replication appliance. Linux is pinned to Mobility-supported kernel
-`6.8.0-1041-azure`, receives its required `/etc/hosts` mapping, restarts, and
-validates root/password SSH plus SFTP. Recheck Microsoft's kernel matrix when
-updating the Mobility Service version.
+Before enabling replication, nested guest provisioning prepares source
+push-install requirements. Windows allows WMI/DCOM dynamic RPC TCP
+`49152-65535` only from the replication appliance path. Linux is installed from
+Ubuntu 22.04.5 media and prepared for root/password SSH plus SFTP. Recheck
+Microsoft's current operating-system and kernel support matrix whenever the
+Mobility Service version or guest kernel changes.
 
 ### Saved settings
 
-The local cache includes subscription IDs, administrator CIDR, SSH public-key path, regions, names, VM sizes, shutdown settings, and deployment toggles. It never stores the generated Windows administrator/Linux root password, SSH private key, or SSH passphrase.
+The local cache includes subscription IDs, administrator CIDR, regions, names, VM sizes, shutdown settings, and deployment toggles. It never stores the Azure deployment password or the nested guest password.
 
 When cached settings are loaded, choose **Use** (the default) to continue, **Change** to re-enter every setting with its current value preloaded as the default, or **Quit** to exit before any Azure operation. The confirmed values are then saved for the next run.
 
@@ -381,7 +449,7 @@ Review or reconfigure the cached administrator CIDR whenever your public IP addr
 
 The source and target regions are independent. Source appliances and simulated workloads default to `eastus2`; target networking, Azure Migrate metadata, and migration resources default to supported region `westus2`. Override them with `-SourceLocation` and `-TargetLocation`.
 
-Preflight registers the required source and target resource providers before checking availability. It rejects unsupported Azure Migrate target regions and checks subscription-aware SKU restrictions plus regional and VM-family quota for all four source VMs in the source subscription and the two intended migrated workload sizes in the target subscription. Target capacity is re-evaluated when migration starts because no target VMs are allocated during lab infrastructure deployment.
+Preflight registers the `Microsoft.Compute/UseStandardSecurityType` feature required by the Standard-security Hyper-V host, re-registers `Microsoft.Compute` to propagate it, and registers the other required source and target resource providers before checking availability. Feature registration requires `Microsoft.Features/*` permission. It rejects unsupported Azure Migrate target regions and checks subscription-aware SKU restrictions plus regional and VM-family quota for the three source-side Azure VMs: discovery appliance, replication appliance, and Hyper-V host. The default source requirement is 40 vCPUs. The two intended migrated workload sizes are a 4-vCPU target assumption; target capacity is re-evaluated when migration starts because no target workload VMs are allocated during lab infrastructure deployment.
 
 Automatic VM-size selection is enabled by default when no VM-size command-line
 arguments are supplied and sizes were not edited interactively. The selected
@@ -399,6 +467,8 @@ If a failed deployment already created deterministic resource groups, in-place r
 
 When Windows VMs from a partial deployment already exist, the script lists them and requires typing `ROTATE` before it aligns their administrator password after a successful incremental deployment.
 
+After deployment approval and before Bicep changes, the script removes a stale Defender for Cloud JIT policy only when every VM in that policy belongs to this lab. It refuses cleanup when a non-lab VM is present. Bicep then restores the administrator-CIDR-restricted management rules, preventing an expired JIT window from unexpectedly blocking RDP on a resumed deployment.
+
 Run the local regression checks without contacting Azure:
 
 `pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\deploy-lab.tests.ps1`
@@ -415,18 +485,7 @@ Run the local regression checks without contacting Azure:
 
 `pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\remove-lab.tests.ps1`
 
-### SSH key options
-
-The default SSH choice creates or reuses this lab-specific key:
-
-- Private key: `ssh/azure-migrate-lab`
-- Public key: `ssh/azure-migrate-lab.pub`
-
-Generated files in `ssh/` are ignored by Git. Keep the private key secure. During first creation, `ssh-keygen` asks for an optional passphrase; press Enter twice to create the key without one.
-
-To use an existing key, choose `U` at the SSH prompt and enter its public-key path. To force lab-key creation from the command line, use:
-
-`pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-lab.ps1 -CreateSshKey`
+`pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\nested-hyperv.tests.ps1`
 
 ### Preview only
 
@@ -440,7 +499,7 @@ Every prompt can also be supplied as a PowerShell parameter. For example:
 
 `pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\deploy-lab.ps1 -SourceLocation eastus2 -TargetLocation westus2 -WindowsSourceVmSize Standard_D2as_v7 -WhatIfOnly`
 
-Passwords, private SSH keys, appliance keys, registration keys, and project keys are never written to the repository.
+Passwords, appliance keys, registration keys, and project keys are never written to the repository.
 
 ### Verify and remove the lab
 
@@ -449,9 +508,14 @@ Run the full live validation independently after registration:
 `pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-lab.ps1`
 
 Use `-SkipGuestChecks` for a faster control-plane-only pass. The full pass checks
-deployment outputs, resource groups, subnets, all four VMs and disks, project
-solutions, linked migration resources, appliance health/registration, and the
-Windows and Linux sample workloads.
+deployment outputs, resource groups, subnets, all three source-side Azure VMs
+and disks, project solutions, linked migration resources, appliance
+health/registration, and the nested Windows and Linux sample workloads. Azure
+Run Command on the discovery appliance verifies its routed WinRM and SSH paths
+to the guests. A separate probe on the Hyper-V host checks both VMs, both
+internal switches, routed-interface forwarding, guest NICs, and IIS/Nginx
+content. Azure Run Command is never invoked against the nested guests because
+they have no Azure VM Agent.
 
 Preview guarded cleanup before deleting anything:
 
@@ -470,6 +534,10 @@ the exact root, nested source/target, validation, and preview subscription
 deployment-history records. Use `-KeepDeploymentHistory` to retain those records.
 Use `-ResetLocalState` for a fresh start; after Azure cleanup it also removes
 `setup-lab.state.local.json`, `deploy-lab.local.json`, and generated `infra/main.json`.
+
+Active replication and every test migration must be cleaned up before resource
+deletion. Deleting the source resource group deletes the Hyper-V host and its
+512-GB guest disk, which also deletes both nested guest VHDXs.
 
 ## Next Steps
 

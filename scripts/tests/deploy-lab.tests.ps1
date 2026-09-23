@@ -25,16 +25,6 @@ foreach ($deploymentStatus in 'Cancelled', 'Previewed', 'Deployed') {
 if (-not $scriptText.Contains('AZURE_MIGRATE_DEPLOYMENT_RESULT=')) {
     throw 'Deployment script must expose a machine-readable result marker.'
 }
-foreach ($linuxPreparationContract in @(
-    "Join-Path `$PSScriptRoot 'prepare-linux-mobility.ps1'"
-    "-DeploymentName 'azure-migrate-lab'"
-    'Preparing and validating Linux Mobility Service prerequisites...'
-    'Infrastructure deployment succeeded, but Linux Mobility Service prerequisite preparation failed.'
-)) {
-    if (-not $scriptText.Contains($linuxPreparationContract)) {
-        throw "Deployment is missing Linux Mobility preparation behavior: $linuxPreparationContract"
-    }
-}
 if (-not $scriptText.Contains('Generated temporary Windows administrator and Linux root password:') -or
     -not $scriptText.Contains('This lab-only shared password is displayed once and is not saved by the script.')) {
     throw 'The one-time deployment password prompt must identify both lab accounts and its non-persistence.'
@@ -69,6 +59,9 @@ foreach ($progressContract in @(
     'Validating deployment with Azure Resource Manager'
     'Running Azure Resource Manager what-if preview'
     'function Show-AzureDeploymentOperations'
+    'function Wait-AzureSubscriptionDeployment'
+    '--no-wait'
+    'ARM deployment state:'
     'ARM operation summary'
 )) {
     if (-not $scriptText.Contains($progressContract)) {
@@ -87,6 +80,17 @@ foreach ($targetProvider in @(
         throw "Target provider registration is missing '$targetProvider'."
     }
 }
+foreach ($featureRegistrationContract in @(
+    'function Ensure-AzureFeatureRegistered'
+    "-FeatureName 'UseStandardSecurityType'"
+    "'feature', 'register'"
+    'requires Microsoft approval'
+    "'provider', 'register'"
+)) {
+    if (-not $scriptText.Contains($featureRegistrationContract)) {
+        throw "Standard-security feature registration behavior is missing: $featureRegistrationContract"
+    }
+}
 foreach ($removedRegionContract in @(
     '[string]$MigrateProjectLocation'
     'AZURE_MIGRATE_LAB_MIGRATE_PROJECT_LOCATION'
@@ -101,55 +105,67 @@ $sourceComputePath = (Resolve-Path (Join-Path $PSScriptRoot '..\..\infra\modules
 $sourceComputeText = Get-Content -LiteralPath $sourceComputePath -Raw
 $sourceNetworkPath = (Resolve-Path (Join-Path $PSScriptRoot '..\..\infra\modules\source-network.bicep')).Path
 $sourceNetworkText = Get-Content -LiteralPath $sourceNetworkPath -Raw
+foreach ($adminAccessContract in @(
+    "resource applianceSubnetNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01'"
+    'id: applianceSubnetNsg.id'
+    "name: 'AllowAdminManagementTcp'"
+    "name: 'AllowAdminIcmp'"
+    "'22'"
+    "'3389'"
+    "protocol: 'Icmp'"
+    'sourceAddressPrefix: adminSourceCidr'
+)) {
+    if (-not $sourceNetworkText.Contains($adminAccessContract)) {
+        throw "Source network admin-access behavior is missing: $adminAccessContract"
+    }
+}
+foreach ($hyperVPublicAccessContract in @(
+    "resource hyperVHostPublicIp 'Microsoft.Network/publicIPAddresses@2024-07-01'"
+    "name: 'pip-`$`{namePrefix`}-hyperv-`$`{suffix`}'"
+    'output hyperVHostPublicIpId string = hyperVHostPublicIp.id'
+    'param hyperVHostPublicIpId string'
+    'id: hyperVHostPublicIpId'
+    "Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' fDenyTSConnections 0 -Type DWord"
+    'Set-Service TermService -StartupType Automatic'
+    "Set-NetFirewallAddressFilter -RemoteAddress '__ADMIN_SOURCE_CIDR__'"
+)) {
+    if (-not $sourceNetworkText.Contains($hyperVPublicAccessContract) -and
+        -not $sourceComputeText.Contains($hyperVPublicAccessContract)) {
+        throw "Hyper-V public RDP behavior is missing: $hyperVPublicAccessContract"
+    }
+}
 if (-not $sourceNetworkText.Contains("name: 'AllowMobilityPushFromReplication'") -or
     -not $sourceNetworkText.Contains("'49152-65535'")) {
     throw 'Replication appliance networking must allow the Windows WMI/DCOM dynamic RPC range.'
 }
-if (-not $sourceComputeText.Contains("Set-NetFirewallAddressFilter -RemoteAddress @('10.10.1.10/32', '10.10.1.20/32')")) {
-    throw 'Windows source bootstrap must scope the Public WinRM address filter to both appliance IPs.'
-}
-foreach ($mobilityFirewallGroup in 'File and Printer Sharing', 'Windows Management Instrumentation (WMI)') {
-    if (-not $sourceComputeText.Contains("Get-NetFirewallRule -DisplayGroup '$mobilityFirewallGroup' -Direction Inbound")) {
-        throw "Windows source bootstrap must enable and scope '$mobilityFirewallGroup' inbound rules."
-    }
-}
-foreach ($linuxReplicationAccessContract in @(
-    "name: 'ConfigureLinuxRootPassword'"
-    "publisher: 'Microsoft.OSTCExtensions'"
-    "type: 'VMAccessForLinux'"
-    'protectedSettings:'
-    "username: 'root'"
-    'password: adminPassword'
-    "name: 'ConfigureLinuxRootSsh'"
-    'PermitRootLogin yes'
-    'PasswordAuthentication yes'
-    'ssh_pwauth: true'
-    'disable_root: false'
-    'disablePasswordAuthentication: false'
-    "sshd -T | grep -qx 'permitrootlogin yes'"
-    "sshd -T | grep -qx 'passwordauthentication yes'"
-    "sshd -T | grep -qx 'pubkeyauthentication yes'"
-    '/dev/disk/azure/data/by-lun/0'
-    'ROOT_PARENT=$(lsblk -no PKNAME "$ROOT_SOURCE" | head -n 1)'
-    'The Linux source data disk was not found.'
-    'UUID=$DEVICE_UUID /data ext4 defaults,nofail 0 2'
-    'linuxRootPasswordExtension'
-    'keyData: sshPublicKey'
+foreach ($nestedComputeContract in @(
+    'param hyperVHostVmSize string'
+    'param configureHyperVHostSecurityType bool'
+    'enableIPForwarding: true'
+    "securityType: 'Standard'"
+    'properties: union({'
+    '}, configureHyperVHostSecurityType ? {'
+    'diskSizeGB: 512'
+    "output windowsSourcePrivateIp string = '10.10.3.10'"
+    "output linuxSourcePrivateIp string = '10.10.3.20'"
 )) {
-    if (-not $sourceComputeText.Contains($linuxReplicationAccessContract)) {
-        throw "Linux replication access behavior is missing: $linuxReplicationAccessContract"
+    if (-not $sourceComputeText.Contains($nestedComputeContract)) {
+        throw "Nested Hyper-V compute behavior is missing: $nestedComputeContract"
     }
 }
-$linuxSourceVmStart = $sourceComputeText.IndexOf("resource linuxSourceVm 'Microsoft.Compute/virtualMachines@2024-11-01'")
-$linuxSourceVmEnd = $sourceComputeText.IndexOf("resource replicationDiskExtension 'Microsoft.Compute/virtualMachines/extensions@2024-11-01'")
-if ($linuxSourceVmStart -lt 0 -or $linuxSourceVmEnd -le $linuxSourceVmStart) {
-    throw 'Linux source VM resource boundaries were not found.'
+foreach ($incrementalSecurityContract in @(
+    'AZURE_MIGRATE_LAB_CONFIGURE_HYPERV_SECURITY_TYPE'
+    '$existingHyperVHost'
+    'Existing Hyper-V host detected; omitting immutable securityType from incremental deployment.'
+)) {
+    if (-not $scriptText.Contains($incrementalSecurityContract)) {
+        throw "Incremental Hyper-V security behavior is missing: $incrementalSecurityContract"
+    }
 }
-$linuxSourceVmText = $sourceComputeText.Substring($linuxSourceVmStart, $linuxSourceVmEnd - $linuxSourceVmStart)
-if (-not $linuxSourceVmText.Contains('adminPassword: adminPassword') -or
-    -not $linuxSourceVmText.Contains('disablePasswordAuthentication: false') -or
-    -not $linuxSourceVmText.Contains('keyData: sshPublicKey')) {
-    throw 'Linux source VM must enable the secure password and retain SSH public-key authentication.'
+foreach ($removedSourceResource in 'resource windowsSourceVm ', 'resource linuxSourceVm ') {
+    if ($sourceComputeText.Contains($removedSourceResource)) {
+        throw "Direct Azure source VM resource remains: $removedSourceResource"
+    }
 }
 if (-not $scriptText.Contains('[switch]$ApproveDeployment') -or
     -not $scriptText.Contains("if (`$ApproveDeployment)")) {
@@ -217,8 +233,12 @@ foreach ($functionName in @(
     'Assert-AzureWindowsAdminPassword',
     'New-AzureWindowsAdminPassword',
     'Read-DeploymentConfirmation',
+    'Invoke-AzureCli',
+    'Ensure-AzureFeatureRegistered',
     'Get-AzureCliJson',
+    'Remove-LabJitNetworkAccessPolicy',
     'Get-VmSkuCapabilityValue',
+    'Test-VmSkuSupportsNestedVirtualization',
     'Get-ComputeOptionAssessment',
     'New-RequestedVirtualMachineSet',
     'New-TargetVirtualMachineSet',
@@ -231,27 +251,78 @@ foreach ($functionName in @(
 )) {
     Import-FunctionFromAst -Name $functionName
 }
+foreach ($jitCleanupContract in @(
+    'jitNetworkAccessPolicies/default?api-version=2020-01-01'
+    "`$labVmNamePattern = '^vm-{0}-(disc|repl|hyperv)-'"
+    'includes non-lab VMs; refusing to delete it'
+    'Bicep will restore CIDR-restricted management rules'
+    'Remove-LabJitNetworkAccessPolicy `'
+)) {
+    if (-not $scriptText.Contains($jitCleanupContract)) {
+        throw "Defender JIT cleanup behavior is missing: $jitCleanupContract"
+    }
+}
 
 $generatedPasswords = @{}
 foreach ($attempt in 1..100) {
     $password = New-AzureWindowsAdminPassword
     Assert-AzureWindowsAdminPassword -Password $password
     Assert-Equal -Actual $password.Length -Expected 24 -Label 'Generated password length'
-    foreach ($pattern in '[a-z]', '[A-Z]', '[0-9]', '[^a-zA-Z0-9]') {
+    foreach ($pattern in '[a-z]', '[A-Z]', '[0-9]') {
         if ($password -cnotmatch $pattern) {
             throw "Generated password is missing required character class '$pattern'."
         }
+    }
+    if ($password -match '[^a-zA-Z0-9]') {
+        throw 'Generated password contains a character that can be reinterpreted by az.cmd.'
     }
     $generatedPasswords[$password] = $true
 }
 Assert-Equal -Actual $generatedPasswords.Count -Expected 100 -Label 'Generated password uniqueness'
 
 $global:MockAzureMode = 'Eligible'
+$script:MockFeatureState = 'Registered'
+$script:MockJitPolicyMode = 'Missing'
+$script:MockJitPolicyDeleted = $false
 function global:az {
     param([Parameter(ValueFromRemainingArguments = $true)][object[]]$Arguments)
 
     $global:LASTEXITCODE = 0
     $commandText = $Arguments -join ' '
+    if ($commandText -match '^rest --method get ' -and $commandText -match 'jitNetworkAccessPolicies/default') {
+        if ($script:MockJitPolicyMode -eq 'Missing') {
+            $global:LASTEXITCODE = 3
+            return '{"error":{"code":"ResourceNotFound"}}'
+        }
+        $virtualMachineIds = if ($script:MockJitPolicyMode -eq 'Mixed') {
+            @(
+                '/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm-amiglab-repl-suffix'
+                '/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/shared-vm'
+            )
+        }
+        else {
+            @('/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm-amiglab-repl-suffix')
+        }
+        return [pscustomobject]@{
+            properties = [pscustomobject]@{
+                virtualMachines = @($virtualMachineIds | ForEach-Object { [pscustomobject]@{ id = $_ } })
+            }
+        } | ConvertTo-Json -Depth 5
+    }
+    if ($commandText -match '^rest --method delete ' -and $commandText -match 'jitNetworkAccessPolicies/default') {
+        $script:MockJitPolicyDeleted = $true
+        return
+    }
+    if ($commandText -match '^feature show ') {
+        return $script:MockFeatureState
+    }
+    if ($commandText -match '^feature register ') {
+        $script:MockFeatureState = 'Registered'
+        return '{}'
+    }
+    if ($commandText -match '^provider register ') {
+        return
+    }
     if ($commandText -match 'vm list-skus') {
         $restrictions = if ($global:MockAzureMode -eq 'Restricted') {
             @([pscustomobject]@{ type = 'Location'; reasonCode = 'NotAvailableForSubscription' })
@@ -259,20 +330,22 @@ function global:az {
         else {
             @()
         }
-        $skus = foreach ($size in 'Standard_D8as_v7', 'Standard_D16as_v7', 'Standard_D2as_v7') {
+        $skus = foreach ($size in 'Standard_D8as_v7', 'Standard_D16as_v7', 'Standard_D16s_v5', 'Standard_D2as_v7') {
             $cores = switch ($size) {
                 'Standard_D16as_v7' { 16 }
+            'Standard_D16s_v5' { 16 }
                 'Standard_D8as_v7' { 8 }
                 default { 2 }
             }
             $memory = switch ($size) {
                 'Standard_D16as_v7' { 64 }
+                'Standard_D16s_v5' { 64 }
                 'Standard_D8as_v7' { 32 }
                 default { 8 }
             }
             [pscustomobject]@{
                 name = $size
-                family = 'standardDASv7Family'
+                family = if ($size -eq 'Standard_D16s_v5') { 'standardDSv5Family' } else { 'standardDASv7Family' }
                 restrictions = $restrictions
                 capabilities = @(
                     [pscustomobject]@{ name = 'vCPUs'; value = [string]$cores }
@@ -302,6 +375,11 @@ function global:az {
                 currentValue = 0
                 limit = $familyLimit
             }
+            [pscustomobject]@{
+                name = [pscustomobject]@{ value = 'standardDSv5Family'; localizedValue = 'Standard DSv5 Family vCPUs' }
+                currentValue = 0
+                limit = $familyLimit
+            }
         ) | ConvertTo-Json -Depth 5
     }
     if ($commandText -match 'deployment sub show' -and $commandText -match '--query location') {
@@ -314,11 +392,76 @@ function global:az {
     throw "Unexpected mocked Azure CLI command: $commandText"
 }
 
+$script:MockJitPolicyMode = 'Missing'
+Remove-LabJitNetworkAccessPolicy `
+    -SubscriptionId 'sub' `
+    -ResourceGroupName 'rg-amiglab-source-suffix' `
+    -Location 'westus2' `
+    -Prefix 'amiglab'
+Assert-Equal -Actual $script:MockJitPolicyDeleted -Expected $false -Label 'Missing JIT policy ignored'
+
+$script:MockJitPolicyMode = 'LabOnly'
+Remove-LabJitNetworkAccessPolicy `
+    -SubscriptionId 'sub' `
+    -ResourceGroupName 'rg-amiglab-source-suffix' `
+    -Location 'westus2' `
+    -Prefix 'amiglab'
+Assert-Equal -Actual $script:MockJitPolicyDeleted -Expected $true -Label 'Lab-only JIT policy deleted'
+
+$script:MockJitPolicyMode = 'Mixed'
+$script:MockJitPolicyDeleted = $false
+$mixedJitPolicyRejected = $false
+try {
+    Remove-LabJitNetworkAccessPolicy `
+        -SubscriptionId 'sub' `
+        -ResourceGroupName 'rg-amiglab-source-suffix' `
+        -Location 'westus2' `
+        -Prefix 'amiglab'
+}
+catch {
+    $mixedJitPolicyRejected = $_.Exception.Message -match 'includes non-lab VMs; refusing to delete it'
+}
+Assert-Equal -Actual $mixedJitPolicyRejected -Expected $true -Label 'Mixed JIT policy rejected'
+Assert-Equal -Actual $script:MockJitPolicyDeleted -Expected $false -Label 'Mixed JIT policy preserved'
+$script:MockJitPolicyMode = 'Missing'
+
+Ensure-AzureFeatureRegistered `
+    -SubscriptionId '00000000-0000-0000-0000-000000000000' `
+    -Namespace 'Microsoft.Compute' `
+    -FeatureName 'UseStandardSecurityType' `
+    -EnvironmentLabel 'source' `
+    -MaximumAttempts 1
+Assert-Equal -Actual $script:MockFeatureState -Expected 'Registered' -Label 'Already registered Standard-security feature'
+
+$script:MockFeatureState = 'NotRegistered'
+Ensure-AzureFeatureRegistered `
+    -SubscriptionId '00000000-0000-0000-0000-000000000000' `
+    -Namespace 'Microsoft.Compute' `
+    -FeatureName 'UseStandardSecurityType' `
+    -EnvironmentLabel 'source' `
+    -MaximumAttempts 1
+Assert-Equal -Actual $script:MockFeatureState -Expected 'Registered' -Label 'Automatic Standard-security feature registration'
+
+$script:MockFeatureState = 'Pending'
+$pendingFeatureFailed = $false
+try {
+    Ensure-AzureFeatureRegistered `
+        -SubscriptionId '00000000-0000-0000-0000-000000000000' `
+        -Namespace 'Microsoft.Compute' `
+        -FeatureName 'UseStandardSecurityType' `
+        -EnvironmentLabel 'source' `
+        -MaximumAttempts 1
+}
+catch {
+    $pendingFeatureFailed = $_.Exception.Message -match 'requires Microsoft approval'
+}
+Assert-Equal -Actual $pendingFeatureFailed -Expected $true -Label 'Pending Standard-security feature approval'
+$script:MockFeatureState = 'Registered'
+
 $requests = New-RequestedVirtualMachineSet `
     -DiscoverySize 'Standard_D8as_v7' `
     -ReplicationSize 'Standard_D16as_v7' `
-    -WindowsSourceSize 'Standard_D2as_v7' `
-    -LinuxSourceSize 'Standard_D2as_v7'
+    -HyperVHostSize 'Standard_D16as_v7'
 
 $targetRequests = New-TargetVirtualMachineSet `
     -WindowsSourceSize 'Standard_D2as_v7' `
@@ -353,6 +496,7 @@ $regionalProfile = [pscustomobject]@{
     Name = 'Regional test profile'
     DiscoveryApplianceVmSize = 'Standard_D8as_v7'
     ReplicationApplianceVmSize = 'Standard_D16as_v7'
+    HyperVHostVmSize = 'Standard_D16as_v7'
     WindowsSourceVmSize = 'Standard_D2as_v7'
     LinuxSourceVmSize = 'Standard_D2as_v7'
 }
@@ -365,6 +509,7 @@ Resolve-RegionalDefaultComputeProfile `
     -ConfigurationPath 'test.local.json'
 Assert-Equal -Actual $script:DiscoveryApplianceVmSize -Expected 'Standard_D8as_v7' -Label 'Regional discovery default'
 Assert-Equal -Actual $script:ReplicationApplianceVmSize -Expected 'Standard_D16as_v7' -Label 'Regional replication default'
+Assert-Equal -Actual $script:HyperVHostVmSize -Expected 'Standard_D16as_v7' -Label 'Regional Hyper-V default'
 Assert-Equal -Actual $script:WindowsSourceVmSize -Expected 'Standard_D2as_v7' -Label 'Regional workload default'
 
 $eligibleAssessment = Get-ComputeOptionAssessment `
@@ -372,13 +517,20 @@ $eligibleAssessment = Get-ComputeOptionAssessment `
     -Location 'eastus2' `
     -RequestedVirtualMachines $requests
 Assert-Equal -Actual $eligibleAssessment.Eligible -Expected $true -Label 'Eligible compute profile'
-Assert-Equal -Actual $eligibleAssessment.RequiredRegionalCores -Expected 28 -Label 'Required regional cores'
+Assert-Equal -Actual $eligibleAssessment.RequiredRegionalCores -Expected 40 -Label 'Required regional cores'
+Assert-Equal `
+    -Actual (Test-VmSkuSupportsNestedVirtualization -SkuName 'Standard_F16s_v2' -CapabilityValue $null) `
+    -Expected $false `
+    -Label 'Undocumented nested virtualization series'
+Assert-Equal `
+    -Actual (Test-VmSkuSupportsNestedVirtualization -SkuName 'Standard_D16as_v7' -CapabilityValue 'False') `
+    -Expected $false `
+    -Label 'Explicit nested virtualization rejection'
 
 $undersizedReplicationRequests = New-RequestedVirtualMachineSet `
     -DiscoverySize 'Standard_D8as_v7' `
     -ReplicationSize 'Standard_D8as_v7' `
-    -WindowsSourceSize 'Standard_D2as_v7' `
-    -LinuxSourceSize 'Standard_D2as_v7'
+    -HyperVHostSize 'Standard_D16as_v7'
 $undersizedReplicationAssessment = Get-ComputeOptionAssessment `
     -SubscriptionId '00000000-0000-0000-0000-000000000000' `
     -Location 'eastus2' `
@@ -404,7 +556,7 @@ $quotaAssessment = Get-ComputeOptionAssessment `
     -Location 'eastus2' `
     -RequestedVirtualMachines $requests
 Assert-Equal -Actual $quotaAssessment.Eligible -Expected $false -Label 'Insufficient family quota'
-if (($quotaAssessment.Issues -join ' ') -notmatch 'requires 28 vCPUs; 10 is available') {
+if (($quotaAssessment.Issues -join ' ') -notmatch 'requires 40 vCPUs; 10 is available') {
     throw 'Quota assessment did not report the expected family quota shortage.'
 }
 
@@ -414,10 +566,15 @@ $failureCases = @(
     @{ Expected = 'Quota'; Json = '{"error":{"code":"QuotaExceeded","message":"Regional quota exceeded"}}' }
     @{ Expected = 'Policy'; Json = '{"error":{"code":"RequestDisallowedByPolicy","message":"Denied"}}' }
     @{ Expected = 'Provider'; Json = '{"error":{"code":"MissingSubscriptionRegistration","message":"Register provider"}}' }
+    @{ Expected = 'Other'; Json = '{"properties":{"error":{"code":"DeploymentFailed","message":"Root failed","details":[{"code":"PropertyChangeNotAllowed","message":"Changing securityType is not allowed."}]}}}' }
 )
 foreach ($failureCase in $failureCases) {
     $failure = Get-AzureDeploymentFailure -Output @($failureCase.Json)
     Assert-Equal -Actual $failure.Category -Expected $failureCase.Expected -Label "$($failureCase.Expected) failure classification"
+    if ($failureCase.Json -match 'PropertyChangeNotAllowed' -and
+        ($failure.Details -join ' ') -notmatch 'PropertyChangeNotAllowed') {
+        throw 'Deployment-show JSON did not expose its nested ARM error details.'
+    }
 }
 
 $freshDeploymentRotation = Confirm-ExistingWindowsPasswordRotation -VirtualMachines @()
@@ -492,12 +649,12 @@ function script:Get-ComputeOptionAssessment {
         Eligible = $eligible
         Location = $Location
         Issues = if ($eligible) { @() } else { @('Unavailable for test') }
-        RequiredRegionalCores = 28
+        RequiredRegionalCores = 40
         AvailableRegionalCores = $availableCores
         FamilyQuota = @(
             [pscustomobject]@{
                 Family = 'standardDASv7Family'
-                RequiredCores = 28
+                RequiredCores = 40
                 AvailableCores = $availableCores
             }
         )
@@ -508,6 +665,7 @@ $testFallbackProfiles = @(
         Name = 'Dasv7'
         DiscoveryApplianceVmSize = 'Standard_D8as_v7'
         ReplicationApplianceVmSize = 'Standard_D16as_v7'
+        HyperVHostVmSize = 'Standard_D16as_v7'
         WindowsSourceVmSize = 'Standard_D2as_v7'
         LinuxSourceVmSize = 'Standard_D2as_v7'
     }
@@ -550,8 +708,7 @@ Remove-Item Function:\Save-LocalConfiguration -ErrorAction SilentlyContinue
 foreach ($variableName in @(
     'AZURE_MIGRATE_LAB_DISCOVERY_VM_SIZE'
     'AZURE_MIGRATE_LAB_REPLICATION_VM_SIZE'
-    'AZURE_MIGRATE_LAB_WINDOWS_SOURCE_VM_SIZE'
-    'AZURE_MIGRATE_LAB_LINUX_SOURCE_VM_SIZE'
+    'AZURE_MIGRATE_LAB_HYPERV_HOST_VM_SIZE'
 )) {
     Remove-Item "Env:$variableName" -ErrorAction SilentlyContinue
 }

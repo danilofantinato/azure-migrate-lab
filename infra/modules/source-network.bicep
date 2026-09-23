@@ -16,20 +16,22 @@ param adminSourceCidr string
 param tags object
 
 var applianceSubnetName = 'snet-appliances'
-var workloadSubnetName = 'snet-workloads'
+var hyperVHostSubnetName = 'snet-hyperv-host'
 var applianceSubnetPrefix = '10.10.1.0/24'
-var workloadSubnetPrefix = '10.10.2.0/24'
+var hyperVHostSubnetPrefix = '10.10.2.0/24'
+var nestedGuestPrefix = '10.10.3.0/24'
 var discoveryPrivateIp = '10.10.1.10'
 var replicationPrivateIp = '10.10.1.20'
+var hyperVHostPrivateIp = '10.10.2.10'
 
-resource discoveryNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
-  name: 'nsg-${namePrefix}-discovery-${suffix}'
+resource applianceSubnetNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
+  name: 'nsg-${namePrefix}-appliances-subnet-${suffix}'
   location: location
   tags: tags
   properties: {
     securityRules: [
       {
-        name: 'AllowAdminRdp'
+        name: 'AllowAdminManagementTcp'
         properties: {
           priority: 100
           access: 'Allow'
@@ -38,7 +40,63 @@ resource discoveryNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
           sourceAddressPrefix: adminSourceCidr
           sourcePortRange: '*'
           destinationAddressPrefix: '*'
-          destinationPortRange: '3389'
+          destinationPortRanges: [
+            '22'
+            '3389'
+            '44368'
+          ]
+        }
+      }
+      {
+        name: 'AllowAdminIcmp'
+        properties: {
+          priority: 110
+          access: 'Allow'
+          direction: 'Inbound'
+          protocol: 'Icmp'
+          sourceAddressPrefix: adminSourceCidr
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
+        }
+      }
+    ]
+  }
+}
+
+resource discoveryNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
+  name: 'nsg-${namePrefix}-discovery-${suffix}'
+  location: location
+  tags: tags
+  properties: {
+    securityRules: [
+      {
+        name: 'AllowAdminManagementTcp'
+        properties: {
+          priority: 100
+          access: 'Allow'
+          direction: 'Inbound'
+          protocol: 'Tcp'
+          sourceAddressPrefix: adminSourceCidr
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRanges: [
+            '22'
+            '3389'
+          ]
+        }
+      }
+      {
+        name: 'AllowAdminIcmp'
+        properties: {
+          priority: 105
+          access: 'Allow'
+          direction: 'Inbound'
+          protocol: 'Icmp'
+          sourceAddressPrefix: adminSourceCidr
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
         }
       }
       {
@@ -78,7 +136,7 @@ resource replicationNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
   properties: {
     securityRules: [
       {
-        name: 'AllowAdminRdp'
+        name: 'AllowAdminManagementTcp'
         properties: {
           priority: 100
           access: 'Allow'
@@ -87,7 +145,23 @@ resource replicationNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
           sourceAddressPrefix: adminSourceCidr
           sourcePortRange: '*'
           destinationAddressPrefix: '*'
-          destinationPortRange: '3389'
+          destinationPortRanges: [
+            '22'
+            '3389'
+          ]
+        }
+      }
+      {
+        name: 'AllowAdminIcmp'
+        properties: {
+          priority: 110
+          access: 'Allow'
+          direction: 'Inbound'
+          protocol: 'Icmp'
+          sourceAddressPrefix: adminSourceCidr
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
         }
       }
       {
@@ -97,7 +171,7 @@ resource replicationNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
           access: 'Allow'
           direction: 'Inbound'
           protocol: 'Tcp'
-          sourceAddressPrefix: workloadSubnetPrefix
+          sourceAddressPrefix: nestedGuestPrefix
           sourcePortRange: '*'
           destinationAddressPrefix: replicationPrivateIp
           destinationPortRange: '443'
@@ -110,7 +184,7 @@ resource replicationNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
           access: 'Allow'
           direction: 'Inbound'
           protocol: 'Tcp'
-          sourceAddressPrefix: workloadSubnetPrefix
+          sourceAddressPrefix: nestedGuestPrefix
           sourcePortRange: '*'
           destinationAddressPrefix: replicationPrivateIp
           destinationPortRange: '9443'
@@ -133,22 +207,68 @@ resource replicationNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
   }
 }
 
-resource workloadNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
-  name: 'nsg-${namePrefix}-workloads-${suffix}'
+resource hyperVHostNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
+  name: 'nsg-${namePrefix}-hyperv-${suffix}'
   location: location
   tags: tags
   properties: {
     securityRules: [
       {
-        name: 'AllowDiscoveryAndAdminFromAppliance'
+        name: 'AllowAdminManagementTcp'
         properties: {
           priority: 100
           access: 'Allow'
           direction: 'Inbound'
           protocol: 'Tcp'
+          sourceAddressPrefix: adminSourceCidr
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRanges: [
+            '22'
+            '3389'
+          ]
+        }
+      }
+      {
+        name: 'AllowAdminIcmp'
+        properties: {
+          priority: 110
+          access: 'Allow'
+          direction: 'Inbound'
+          protocol: 'Icmp'
+          sourceAddressPrefix: adminSourceCidr
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
+        }
+      }
+      {
+        name: 'AllowHostManagementFromAppliances'
+        properties: {
+          priority: 200
+          access: 'Allow'
+          direction: 'Inbound'
+          protocol: 'Tcp'
+          sourceAddressPrefix: applianceSubnetPrefix
+          sourcePortRange: '*'
+          destinationAddressPrefix: '${hyperVHostPrivateIp}/32'
+          destinationPortRanges: [
+            '3389'
+            '5985'
+            '5986'
+          ]
+        }
+      }
+      {
+        name: 'AllowDiscoveryToNestedGuests'
+        properties: {
+          priority: 210
+          access: 'Allow'
+          direction: 'Inbound'
+          protocol: 'Tcp'
           sourceAddressPrefix: '${discoveryPrivateIp}/32'
           sourcePortRange: '*'
-          destinationAddressPrefix: workloadSubnetPrefix
+          destinationAddressPrefix: nestedGuestPrefix
           destinationPortRanges: [
             '22'
             '3389'
@@ -160,13 +280,13 @@ resource workloadNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
       {
         name: 'AllowMobilityPushFromReplication'
         properties: {
-          priority: 110
+          priority: 220
           access: 'Allow'
           direction: 'Inbound'
           protocol: 'Tcp'
           sourceAddressPrefix: '${replicationPrivateIp}/32'
           sourcePortRange: '*'
-          destinationAddressPrefix: workloadSubnetPrefix
+          destinationAddressPrefix: nestedGuestPrefix
           destinationPortRanges: [
             '22'
             '135'
@@ -194,6 +314,25 @@ resource workloadNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
   }
 }
 
+resource applianceRouteTable 'Microsoft.Network/routeTables@2024-07-01' = {
+  name: 'rt-${namePrefix}-nested-guests-${suffix}'
+  location: location
+  tags: tags
+  properties: {
+    disableBgpRoutePropagation: false
+    routes: [
+      {
+        name: 'ToNestedGuests'
+        properties: {
+          addressPrefix: nestedGuestPrefix
+          nextHopType: 'VirtualAppliance'
+          nextHopIpAddress: '10.10.2.10'
+        }
+      }
+    ]
+  }
+}
+
 resource discoveryPublicIp 'Microsoft.Network/publicIPAddresses@2024-07-01' = {
   name: 'pip-${namePrefix}-discovery-${suffix}'
   location: location
@@ -208,6 +347,18 @@ resource discoveryPublicIp 'Microsoft.Network/publicIPAddresses@2024-07-01' = {
 
 resource replicationPublicIp 'Microsoft.Network/publicIPAddresses@2024-07-01' = {
   name: 'pip-${namePrefix}-replication-${suffix}'
+  location: location
+  tags: tags
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+  }
+}
+
+resource hyperVHostPublicIp 'Microsoft.Network/publicIPAddresses@2024-07-01' = {
+  name: 'pip-${namePrefix}-hyperv-${suffix}'
   location: location
   tags: tags
   sku: {
@@ -262,14 +413,20 @@ resource sourceVnet 'Microsoft.Network/virtualNetworks@2024-07-01' = {
         name: applianceSubnetName
         properties: {
           addressPrefix: applianceSubnetPrefix
+          networkSecurityGroup: {
+            id: applianceSubnetNsg.id
+          }
+          routeTable: {
+            id: applianceRouteTable.id
+          }
         }
       }
       {
-        name: workloadSubnetName
+        name: hyperVHostSubnetName
         properties: {
-          addressPrefix: workloadSubnetPrefix
+          addressPrefix: hyperVHostSubnetPrefix
           networkSecurityGroup: {
-            id: workloadNsg.id
+            id: hyperVHostNsg.id
           }
           natGateway: {
             id: sourceNatGateway.id
@@ -280,11 +437,23 @@ resource sourceVnet 'Microsoft.Network/virtualNetworks@2024-07-01' = {
   }
 }
 
-output applianceSubnetId string = resourceId('Microsoft.Network/virtualNetworks/subnets', sourceVnet.name, applianceSubnetName)
-output workloadSubnetId string = resourceId('Microsoft.Network/virtualNetworks/subnets', sourceVnet.name, workloadSubnetName)
+output applianceSubnetId string = resourceId(
+  'Microsoft.Network/virtualNetworks/subnets',
+  sourceVnet.name,
+  applianceSubnetName
+)
+output hyperVHostSubnetId string = resourceId(
+  'Microsoft.Network/virtualNetworks/subnets',
+  sourceVnet.name,
+  hyperVHostSubnetName
+)
 output discoveryNsgId string = discoveryNsg.id
 output replicationNsgId string = replicationNsg.id
+output hyperVHostNsgId string = hyperVHostNsg.id
 output discoveryPublicIpId string = discoveryPublicIp.id
 output replicationPublicIpId string = replicationPublicIp.id
+output hyperVHostPublicIpId string = hyperVHostPublicIp.id
 output discoveryPrivateIp string = discoveryPrivateIp
 output replicationPrivateIp string = replicationPrivateIp
+output hyperVHostPrivateIp string = hyperVHostPrivateIp
+output nestedGuestPrefix string = nestedGuestPrefix

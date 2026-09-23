@@ -108,8 +108,8 @@ if (-not $scriptText.Contains('Check complete: discovery appliance is already in
 }
 foreach ($registrationInstruction in @(
     'Overview > Inventory, select Start discovery > Using appliance > Physical or other'
-    'Windows | source-win01   | 10.10.2.10 | labwindows'
-    'Linux   | source-linux01 | 10.10.2.20 | lablinux'
+    'Windows | source-win01   | 10.10.3.10 | labwindows'
+    'Linux   | source-linux01 | 10.10.3.20 | lablinux'
     'Validate both sources, select Start discovery'
     'A 401 from graph.windows.net proves endpoint reachability'
 )) {
@@ -129,6 +129,20 @@ foreach ($componentUpdateText in @(
     'MicrosoftAzureApplianceConfigurationManager.msi'
     'MicrosoftAzureAutoUpdate.msi'
     'function Install-VerifiedMicrosoftMsi'
+    'function Get-MsiProperty'
+    '$database = $windowsInstaller.OpenDatabase($msiPath, 0)'
+    '$view = $database.OpenView('
+    '[void]$view.Execute()'
+    '$record = $view.Fetch()'
+    '$record.StringData(1)'
+    '[Runtime.InteropServices.Marshal]::FinalReleaseComObject($database)'
+    '$null -ne $_.PSObject.Properties[''DisplayName'']'
+    '[string]$_.DisplayName -eq $productName'
+    "Get-MsiProperty -PropertyName 'ProductName'"
+    "Get-MsiProperty -PropertyName 'ProductVersion'"
+    '[version]$installedProduct[0].DisplayVersion -ge [version]$productVersion'
+    'foreach ($attempt in 1..30)'
+    '$process.ExitCode -ne 1618'
     "`$signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation'"
     "@('/i', ('`"{0}`"' -f `$msiPath), '/qn', '/norestart', '/L*v'"
     '$process.ExitCode -notin @(0, 3010)'

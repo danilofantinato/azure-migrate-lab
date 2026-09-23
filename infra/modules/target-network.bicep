@@ -9,6 +9,9 @@ param namePrefix string
 @description('Deterministic resource name suffix.')
 param suffix string
 
+@description('Public administrator IPv4 CIDR allowed to reach VM management ports.')
+param adminSourceCidr string
+
 @description('Deploy a NAT Gateway for target test and final subnets.')
 param deployTargetNatGateway bool
 
@@ -32,6 +35,35 @@ resource testNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
   properties: {
     securityRules: [
       {
+        name: 'AllowAdminManagementTcp'
+        properties: {
+          priority: 100
+          access: 'Allow'
+          direction: 'Inbound'
+          protocol: 'Tcp'
+          sourceAddressPrefix: adminSourceCidr
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRanges: [
+            '22'
+            '3389'
+          ]
+        }
+      }
+      {
+        name: 'AllowAdminIcmp'
+        properties: {
+          priority: 110
+          access: 'Allow'
+          direction: 'Inbound'
+          protocol: 'Icmp'
+          sourceAddressPrefix: adminSourceCidr
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
+        }
+      }
+      {
         name: 'DenyVnetInbound'
         properties: {
           priority: 4000
@@ -54,6 +86,35 @@ resource finalNsg 'Microsoft.Network/networkSecurityGroups@2024-07-01' = {
   tags: tags
   properties: {
     securityRules: [
+      {
+        name: 'AllowAdminManagementTcp'
+        properties: {
+          priority: 100
+          access: 'Allow'
+          direction: 'Inbound'
+          protocol: 'Tcp'
+          sourceAddressPrefix: adminSourceCidr
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRanges: [
+            '22'
+            '3389'
+          ]
+        }
+      }
+      {
+        name: 'AllowAdminIcmp'
+        properties: {
+          priority: 110
+          access: 'Allow'
+          direction: 'Inbound'
+          protocol: 'Icmp'
+          sourceAddressPrefix: adminSourceCidr
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '*'
+        }
+      }
       {
         name: 'DenyVnetInbound'
         properties: {

@@ -22,6 +22,7 @@ foreach ($requiredOutput in @(
     'targetResourceGroupId'
     'discoveryApplianceName'
     'replicationApplianceName'
+    'hyperVHostName'
     'windowsSourceName'
     'linuxSourceName'
     'targetTestSubnetId'
@@ -34,8 +35,7 @@ foreach ($requiredOutput in @(
 foreach ($requiredProbe in @(
     'AZURE_MIGRATE_DISCOVERY_HEALTH='
     'AZURE_MIGRATE_REPLICATION_HEALTH='
-    'AZURE_MIGRATE_WINDOWS_WORKLOAD='
-    'AZURE_MIGRATE_LINUX_WORKLOAD='
+    'AZURE_MIGRATE_NESTED_GUESTS='
 )) {
     if (-not $scriptText.Contains($requiredProbe)) {
         throw "Lab validation is missing guest probe '$requiredProbe'."
@@ -46,24 +46,60 @@ foreach ($requiredGate in '-RequireDiscoveryResources', '-RequireDiscoveredServe
         throw "Lab validation is missing project gate '$requiredGate'."
     }
 }
-if (-not $scriptText.Contains("Get-Volume -FileSystemLabel 'LabData'") -or
-    $scriptText.Contains("Test-Path -LiteralPath 'D:\lab-data\migration-marker.txt'")) {
-    throw 'Windows workload validation must resolve its marker from the LabData volume label.'
+foreach ($subnetValidationContract in @(
+    'function Test-SubnetExists'
+    "'network', 'vnet', 'subnet', 'show'"
+    'Test-SubnetExists -SubscriptionId $targetSubscriptionId -ResourceId $testSubnetId'
+    'Test-SubnetExists -SubscriptionId $targetSubscriptionId -ResourceId $finalSubnetId'
+)) {
+    if (-not $scriptText.Contains($subnetValidationContract)) {
+        throw "Lab validation is missing subnet-specific validation: $subnetValidationContract"
+    }
+}
+foreach ($obsoleteSubnetValidation in @(
+    'Test-ResourceExists -SubscriptionId $targetSubscriptionId -ResourceId $testSubnetId'
+    'Test-ResourceExists -SubscriptionId $targetSubscriptionId -ResourceId $finalSubnetId'
+)) {
+    if ($scriptText.Contains($obsoleteSubnetValidation)) {
+        throw "Lab validation still uses generic resource lookup for a subnet: $obsoleteSubnetValidation"
+    }
 }
 if ($scriptText.Contains("foreach (`$propertyName in 'IsApplianceRegistered', 'IsRegistered')")) {
     throw 'Replication registration must be verified from Azure, not guessed guest registry flags.'
 }
-foreach ($linuxMobilityGate in @(
-    "expected_kernel='6.8.0-1041-azure'"
-    'PasswordAuthentication'
-    'PermitRootLogin'
-    'RootPasswordSet'
-    'SftpEnabled'
-    'HostMappingPresent'
-    'Mobility prerequisites ready on kernel'
+foreach ($nestedGuestGate in @(
+    "Get-VM -Name 'source-win01','source-linux01'"
+    'Get-VMSwitch -ErrorAction SilentlyContinue'
+    "Where-Object Name -in 'NestedRouted','NestedNat'"
+    "Test-TcpEndpoint '10.10.3.10' 5985"
+    "Test-TcpEndpoint '10.10.3.20' 22"
+    "Get-WebContent '10.10.3.10'"
+    "Get-WebContent '10.10.3.20'"
+    '-VirtualMachineName $hyperVHostName'
+    "[string]`$_.SwitchType -eq 'Internal' -or [int]`$_.SwitchType -eq 1"
 )) {
-    if (-not $scriptText.Contains($linuxMobilityGate)) {
-        throw "Lab validation is missing Linux Mobility gate: $linuxMobilityGate"
+    if (-not $scriptText.Contains($nestedGuestGate)) {
+        throw "Lab validation is missing nested guest gate: $nestedGuestGate"
+    }
+}
+$discoveryProbePosition = $scriptText.IndexOf('$discoveryProbe = @''')
+$nestedProbePosition = $scriptText.IndexOf('$nestedGuestProbe = @''')
+foreach ($discoveryOriginatedProbe in @(
+    "Test-TcpEndpoint '10.10.3.10' 5985"
+    "Test-TcpEndpoint '10.10.3.20' 22"
+)) {
+    $probePosition = $scriptText.IndexOf($discoveryOriginatedProbe)
+    if (
+        $probePosition -lt $discoveryProbePosition -or
+        $probePosition -gt $nestedProbePosition -or
+        $scriptText.IndexOf($discoveryOriginatedProbe, $probePosition + 1) -ge 0
+    ) {
+        throw "Nested management probe must run exactly once from the discovery appliance: $discoveryOriginatedProbe"
+    }
+}
+foreach ($forbiddenDirectProbe in '-VirtualMachineName $windowsSourceName', '-VirtualMachineName $linuxSourceName') {
+    if ($scriptText.Contains($forbiddenDirectProbe)) {
+        throw "Nested guests must not be probed through Azure Run Command: $forbiddenDirectProbe"
     }
 }
 if (-not $scriptText.Contains('AZURE_MIGRATE_LAB_TEST_RESULT=')) {

@@ -9,6 +9,9 @@ param namePrefix string
 @description('Deterministic resource name suffix.')
 param suffix string
 
+@description('Public administrator IPv4 CIDR allowed to reach VM management ports.')
+param adminSourceCidr string
+
 @description('Deploy target NAT Gateway resources.')
 param deployTargetNatGateway bool
 
@@ -31,6 +34,7 @@ module targetNetwork './target-network.bicep' = {
     location: location
     namePrefix: namePrefix
     suffix: suffix
+    adminSourceCidr: adminSourceCidr
     deployTargetNatGateway: deployTargetNatGateway
     deployAzureMigrateProject: deployAzureMigrateProject
     tags: tags

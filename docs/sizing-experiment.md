@@ -90,7 +90,7 @@ Evaluate each hypothesis against captured evidence.
 | Disk requirements constrained sizes | Required disk count, size, IOPS, throughput, interface, and selected disk type |  |
 | The workflow selected a closest source-configuration match | Direct-inventory path and initially displayed size |  |
 | Operator changed the target size | Job history, notes, or screenshots before and after change |  |
-| Marketplace-image limitation blocked the result | Migration error and current support-matrix statement |  |
+| Guest OS, kernel, firmware, or disk support blocked the result | Exact migration error and current physical-server support-matrix evidence |  |
 
 ## Evidence Capture
 
@@ -100,10 +100,10 @@ For every run, retain:
 - Screenshots of the initial target Compute and Disks pages before edits.
 - Azure Migrate job ID and timestamps.
 - Current VM SKU availability and quota output.
-- Source VM size and disk configuration from Azure Resource Manager.
+- Nested source VM processor, memory, firmware, and VHDX configuration from the Hyper-V host.
 - Source workload schedule and observed performance window.
 - Final VM resource JSON if test or final migration creates a VM.
-- Exact error text if the direct-Azure-VM limitation blocks migration.
+- Exact error text if guest compatibility or Mobility Service support blocks migration.
 
 Do not store passwords, SSH private keys, appliance keys, passphrases, or authentication codes with the evidence.
 
@@ -124,7 +124,7 @@ Remaining uncertainty:
 
 Effect of manual target-size selection:
 
-Effect of the unsupported Azure-VM-as-physical source design:
+Effect of the nested-virtualization lab simulation:
 ```
 
 ## References

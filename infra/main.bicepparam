@@ -4,7 +4,6 @@ param sourceSubscriptionId = readEnvironmentVariable('AZURE_MIGRATE_LAB_SOURCE_S
 param targetSubscriptionId = readEnvironmentVariable('AZURE_MIGRATE_LAB_TARGET_SUBSCRIPTION_ID', '')
 param adminSourceCidr = readEnvironmentVariable('AZURE_MIGRATE_LAB_ADMIN_SOURCE_CIDR', '')
 param adminPassword = readEnvironmentVariable('AZURE_MIGRATE_LAB_ADMIN_PASSWORD', '')
-param sshPublicKey = readEnvironmentVariable('AZURE_MIGRATE_LAB_SSH_PUBLIC_KEY', '')
 
 param sourceLocation = readEnvironmentVariable('AZURE_MIGRATE_LAB_SOURCE_LOCATION', 'eastus2')
 param targetLocation = readEnvironmentVariable('AZURE_MIGRATE_LAB_TARGET_LOCATION', 'westus2')
@@ -13,8 +12,8 @@ param adminUsername = readEnvironmentVariable('AZURE_MIGRATE_LAB_ADMIN_USERNAME'
 
 param discoveryApplianceVmSize = readEnvironmentVariable('AZURE_MIGRATE_LAB_DISCOVERY_VM_SIZE', 'Standard_D8as_v7')
 param replicationApplianceVmSize = readEnvironmentVariable('AZURE_MIGRATE_LAB_REPLICATION_VM_SIZE', 'Standard_D16as_v7')
-param windowsSourceVmSize = readEnvironmentVariable('AZURE_MIGRATE_LAB_WINDOWS_SOURCE_VM_SIZE', 'Standard_D2as_v7')
-param linuxSourceVmSize = readEnvironmentVariable('AZURE_MIGRATE_LAB_LINUX_SOURCE_VM_SIZE', 'Standard_D2as_v7')
+param hyperVHostVmSize = readEnvironmentVariable('AZURE_MIGRATE_LAB_HYPERV_HOST_VM_SIZE', 'Standard_D16as_v7')
+param configureHyperVHostSecurityType = bool(readEnvironmentVariable('AZURE_MIGRATE_LAB_CONFIGURE_HYPERV_SECURITY_TYPE', 'true'))
 
 param autoShutdownEnabled = bool(readEnvironmentVariable('AZURE_MIGRATE_LAB_AUTO_SHUTDOWN_ENABLED', 'true'))
 param autoShutdownTime = readEnvironmentVariable('AZURE_MIGRATE_LAB_AUTO_SHUTDOWN_TIME', '1900')

@@ -15,12 +15,9 @@ param adminSourceCidr string
 @description('Virtual machine administrator username.')
 param adminUsername string
 
-@description('Windows administrator and Linux root replication password.')
+@description('Windows administrator password for the Azure appliances and Hyper-V host.')
 @secure()
 param adminPassword string
-
-@description('Linux administrator SSH public key.')
-param sshPublicKey string
 
 @description('Discovery appliance VM size.')
 param discoveryApplianceVmSize string
@@ -28,11 +25,11 @@ param discoveryApplianceVmSize string
 @description('Replication appliance VM size.')
 param replicationApplianceVmSize string
 
-@description('Windows source VM size.')
-param windowsSourceVmSize string
+@description('Nested-virtualization Hyper-V host VM size.')
+param hyperVHostVmSize string
 
-@description('Linux source VM size.')
-param linuxSourceVmSize string
+@description('Set explicit Standard security while creating the Hyper-V host.')
+param configureHyperVHostSecurityType bool
 
 @description('Enable automatic shutdown schedules.')
 param autoShutdownEnabled bool
@@ -71,19 +68,20 @@ module sourceCompute './source-compute.bicep' = {
     location: location
     namePrefix: namePrefix
     suffix: suffix
+    adminSourceCidr: adminSourceCidr
     adminUsername: adminUsername
     adminPassword: adminPassword
-    sshPublicKey: sshPublicKey
     discoveryApplianceVmSize: discoveryApplianceVmSize
     replicationApplianceVmSize: replicationApplianceVmSize
-    windowsSourceVmSize: windowsSourceVmSize
-    linuxSourceVmSize: linuxSourceVmSize
+    hyperVHostVmSize: hyperVHostVmSize
+    configureHyperVHostSecurityType: configureHyperVHostSecurityType
     applianceSubnetId: sourceNetwork.outputs.applianceSubnetId
-    workloadSubnetId: sourceNetwork.outputs.workloadSubnetId
+    hyperVHostSubnetId: sourceNetwork.outputs.hyperVHostSubnetId
     discoveryNsgId: sourceNetwork.outputs.discoveryNsgId
     replicationNsgId: sourceNetwork.outputs.replicationNsgId
     discoveryPublicIpId: sourceNetwork.outputs.discoveryPublicIpId
     replicationPublicIpId: sourceNetwork.outputs.replicationPublicIpId
+    hyperVHostPublicIpId: sourceNetwork.outputs.hyperVHostPublicIpId
     autoShutdownEnabled: autoShutdownEnabled
     autoShutdownTime: autoShutdownTime
     autoShutdownTimeZone: autoShutdownTimeZone
@@ -93,8 +91,11 @@ module sourceCompute './source-compute.bicep' = {
 
 output resourceGroupId string = sourceResourceGroup.id
 output applianceSubnetId string = sourceNetwork.outputs.applianceSubnetId
-output workloadSubnetId string = sourceNetwork.outputs.workloadSubnetId
+output hyperVHostSubnetId string = sourceNetwork.outputs.hyperVHostSubnetId
 output discoveryApplianceName string = sourceCompute.outputs.discoveryApplianceName
 output replicationApplianceName string = sourceCompute.outputs.replicationApplianceName
+output hyperVHostName string = sourceCompute.outputs.hyperVHostName
 output windowsSourceName string = sourceCompute.outputs.windowsSourceName
 output linuxSourceName string = sourceCompute.outputs.linuxSourceName
+output windowsSourcePrivateIp string = sourceCompute.outputs.windowsSourcePrivateIp
+output linuxSourcePrivateIp string = sourceCompute.outputs.linuxSourcePrivateIp

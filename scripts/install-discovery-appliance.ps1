@@ -223,14 +223,67 @@ function Install-VerifiedMicrosoftMsi {
         throw "$Name does not have a valid Microsoft Authenticode signature ($($signature.Status))."
     }
 
+    $windowsInstaller = $null
+    $database = $null
+    try {
+        $windowsInstaller = New-Object -ComObject WindowsInstaller.Installer
+        $database = $windowsInstaller.OpenDatabase($msiPath, 0)
+        function Get-MsiProperty {
+            param([Parameter(Mandatory)][string]$PropertyName)
+
+            $view = $null
+            $record = $null
+            try {
+                $view = $database.OpenView("SELECT ``Value`` FROM ``Property`` WHERE ``Property``='$PropertyName'")
+                [void]$view.Execute()
+                $record = $view.Fetch()
+                if ($null -eq $record) { throw "MSI property '$PropertyName' was not found in '$msiPath'." }
+                return [string]$record.StringData(1)
+            }
+            finally {
+                if ($null -ne $record) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($record) }
+                if ($null -ne $view) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($view) }
+            }
+        }
+        $productName = Get-MsiProperty -PropertyName 'ProductName'
+        $productVersion = Get-MsiProperty -PropertyName 'ProductVersion'
+    }
+    finally {
+        if ($null -ne $database) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($database) }
+        if ($null -ne $windowsInstaller) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($windowsInstaller) }
+    }
+    $installedProduct = @(
+        Get-ItemProperty `
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', `
+            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' `
+            -ErrorAction SilentlyContinue |
+            Where-Object {
+                $null -ne $_.PSObject.Properties['DisplayName'] -and
+                [string]$_.DisplayName -eq $productName
+            } |
+            Select-Object -First 1
+    )
+    if (
+        $installedProduct.Count -gt 0 -and
+        [version]$installedProduct[0].DisplayVersion -ge [version]$productVersion
+    ) {
+        return $false
+    }
+
     $arguments = @('/i', ('"{0}"' -f $msiPath), '/qn', '/norestart', '/L*v', ('"{0}"' -f $logPath))
-    $process = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList $arguments -Wait -PassThru
+    $process = $null
+    foreach ($attempt in 1..30) {
+        $process = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList $arguments -Wait -PassThru
+        if ($process.ExitCode -ne 1618) { break }
+        Start-Sleep -Seconds 10
+    }
     if ($process.ExitCode -notin @(0, 3010)) {
         throw "$Name installation failed with exit code $($process.ExitCode). Review $logPath."
     }
     if ($process.ExitCode -eq 3010) {
         $script:componentUpdateRebootRequired = $true
     }
+    return $true
 }
 
 function Update-ApplianceComponents {
@@ -258,14 +311,16 @@ function Update-ApplianceComponents {
         }
     }
 
-    Install-VerifiedMicrosoftMsi -Name 'MicrosoftAzureAutoUpdate' -Uri $autoUpdateUri -ExpectedSha256 $autoUpdateSha256
-    Install-VerifiedMicrosoftMsi `
+    $autoUpdateChanged = Install-VerifiedMicrosoftMsi -Name 'MicrosoftAzureAutoUpdate' -Uri $autoUpdateUri -ExpectedSha256 $autoUpdateSha256
+    $configurationManagerChanged = Install-VerifiedMicrosoftMsi `
         -Name 'MicrosoftAzureApplianceConfigurationManager' `
         -Uri $configurationManagerUpdateUri `
         -ExpectedSha256 $configurationManagerUpdateSha256
     $expectedMarker | ConvertTo-Json | Set-Content -LiteralPath $componentUpdateMarkerPath -Encoding utf8
-    $script:componentUpdatesApplied = $true
-    Restart-Service -Name W3SVC -Force -ErrorAction SilentlyContinue
+    $script:componentUpdatesApplied = $autoUpdateChanged -or $configurationManagerChanged
+    if ($script:componentUpdatesApplied) {
+        Restart-Service -Name W3SVC -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Write-InstallResult {
@@ -515,10 +570,10 @@ Write-InstallResult -Status $completionStatus -ApplianceStatus $finalStatus
     Write-Host '1. In Azure Migrate Overview > Inventory, select Start discovery > Using appliance > Physical or other.'
     Write-Host '2. Generate the project key with an alphanumeric appliance name of 14 characters or fewer.'
     Write-Host "3. Open https://$publicIpAddress`:44368, paste the key, install updates, and complete device-code sign-in."
-    Write-Host '4. Add credentials: labwindows = Windows/labadmin/password; lablinux = Linux/labadmin/SSH key.'
+    Write-Host '4. Add credentials using the nested guest password from setup step 2: labwindows = Windows/labadmin; lablinux = Linux/labadmin.'
     Write-Host '5. Add sources:'
-    Write-Host '   Windows | source-win01   | 10.10.2.10 | labwindows'
-    Write-Host '   Linux   | source-linux01 | 10.10.2.20 | lablinux'
+    Write-Host '   Windows | source-win01   | 10.10.3.10 | labwindows'
+    Write-Host '   Linux   | source-linux01 | 10.10.3.20 | lablinux'
     Write-Host '6. Validate both sources, select Start discovery, and wait for successful initiation.'
     Write-Host 'A 401 from graph.windows.net proves endpoint reachability; it is not a NAT or firewall failure.'
 }

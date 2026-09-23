@@ -150,7 +150,7 @@ The script displays a separate one-time 24-character alphanumeric nested guest p
 Default public media:
 
 - Microsoft Windows Server 2022 Evaluation through `https://go.microsoft.com/fwlink/p/?LinkID=2195280&clcid=0x409&culture=en-us&country=US`.
-- Canonical Ubuntu 22.04 generic cloud image through `https://cloud-images.ubuntu.com/releases/jammy/release-20260913/ubuntu-22.04-server-cloudimg-amd64.img`.
+- Canonical Ubuntu 22.04 generic cloud image through `https://cloud-images.ubuntu.com/releases/jammy/release-20251031/ubuntu-22.04-server-cloudimg-amd64.img`. This dated image is pinned to stock kernel `5.15.0-161-generic`, supported by physical-server Mobility Service 9.66; kernel meta-packages are held for lab reproducibility.
 - Windows qemu-img 2.3.0 package through `https://cloudbase.it/downloads/qemu-img-win-x64-2_3_0.zip`; the worker uses it to convert the generic qcow2 image to dynamic VHDX.
 
 Override the HTTPS locations with `-WindowsServerIsoUri`, `-UbuntuCloudImageUri`, and `-QemuImgArchiveUri`. Their corresponding SHA256 parameters pin trusted content; the Ubuntu and qemu-img defaults are pinned. The old `UbuntuVhdArchive` parameter names remain aliases. Public URLs and redirect targets can drift, so verify the publisher, media or tool version, license, and hash when an endpoint changes. Windows Server Evaluation is time-limited evaluation software governed by Microsoft's evaluation license and is not a production license.
@@ -463,7 +463,7 @@ In the replication appliance configuration manager, add the Windows local admini
 
 **AUTOMATED PREREQUISITES, MANUAL AZURE MIGRATE STEP**
 
-Linux push requires the built-in root account, SSH, SFTP, password authentication, a hostname-to-routed-IP entry in `/etc/hosts`, and a kernel explicitly supported by the installed Mobility Service version. Nested guest provisioning configures root/password SSH and the `10.10.3.20 source-linux01` mapping. In Appliance Configuration Manager, use the `lablinuxroot` credential for `source-linux01`; during **Enable replication**, select that credential for Mobility Service push installation.
+Linux push requires the built-in root account, SSH, SFTP, password authentication, Secure Boot disabled, a hostname-to-routed-IP entry in `/etc/hosts`, and a kernel explicitly supported by the installed Mobility Service version. Nested guest provisioning disables Secure Boot, configures root/password SSH, and adds the `10.10.3.20 source-linux01` mapping. In Appliance Configuration Manager, use the `lablinuxroot` credential for `source-linux01`; during **Enable replication**, select that credential for Mobility Service push installation.
 
 Do not assume that every Ubuntu kernel is compatible. Record `uname -r` and compare it with the support matrix for the Mobility Service version installed by the current replication appliance. Recheck the matrix whenever the appliance package or guest kernel changes.
 
@@ -588,6 +588,7 @@ Investigate differences against recorded evidence: source configuration, assessm
 | Replication appliance is absent from project Appliances/Infrastructure servers | This is expected for the Site Recovery provider. Open the generated Recovery Services vault > Site Recovery infrastructure and verify the `InMageRcm` provider is `Connected` with a recent heartbeat |
 | Windows error `322001` followed by `539` | Verify admin credential and `LocalAccountTokenFilterPolicy=1`; confirm process-server access to TCP 135, 445, and 5985; allow dynamic RPC TCP 49152-65535 from replication appliance `10.10.1.20/32`; enable/scoped WMI, File Sharing, and Public WinRM firewall rules |
 | Linux errors `327141`, `327217`, and `539` (outer error can be `310056`) | Compare `uname -r` with the Mobility Service support matrix for the installed appliance version; verify root password SSH, SFTP, the `10.10.3.20 source-linux01` mapping, routed return path, and TCP 22 |
+| Linux error `327215` | Disable Secure Boot on the nested Linux VM, restart it, and retry enable replication. Secure Boot is unsupported for physical-server Mobility Service replication. |
 | Windows push installation fails without `322001` | Verify admin credential, LocalAccountTokenFilterPolicy, File and Printer Sharing, WMI/DCOM, TCP 135/445/5985 and dynamic RPC, antivirus exclusions, and free space |
 | Linux push installation fails without `327217` | Verify the `lablinuxroot` credential, effective `PermitRootLogin yes` and `PasswordAuthentication yes`, SSH/SFTP on TCP 22, hostname mapping, free space, OpenSSH/OpenSSL packages, and supported OS/kernel |
 | Nested guests are unreachable | On the host, verify both VMs are running, both internal switches exist, routed-interface forwarding is enabled, each guest has two NICs, the UDR points `10.10.3.0/24` to `10.10.2.10`, and guest firewalls permit the appliance paths |

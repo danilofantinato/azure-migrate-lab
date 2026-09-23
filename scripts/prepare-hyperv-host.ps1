@@ -3,12 +3,13 @@ param(
     [string]$ConfigFile,
     [string]$DeploymentName = 'azure-migrate-lab',
     [uri]$WindowsServerIsoUri = 'https://go.microsoft.com/fwlink/p/?LinkID=2195280&clcid=0x409&culture=en-us&country=US',
-    [Alias('UbuntuVhdArchiveUri', 'UbuntuIsoUri')][uri]$UbuntuCloudImageUri = 'https://cloud-images.ubuntu.com/releases/jammy/release-20260913/ubuntu-22.04-server-cloudimg-amd64.img',
+    [Alias('UbuntuVhdArchiveUri', 'UbuntuIsoUri')][uri]$UbuntuCloudImageUri = 'https://cloud-images.ubuntu.com/releases/jammy/release-20251031/ubuntu-22.04-server-cloudimg-amd64.img',
     [ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$WindowsServerIsoSha256,
-    [Alias('UbuntuVhdArchiveSha256', 'UbuntuIsoSha256')][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$UbuntuCloudImageSha256 = '9144540e8af7637d258b50dbabe82ce1aa6752c9574fedfb048270da0e087899',
+    [Alias('UbuntuVhdArchiveSha256', 'UbuntuIsoSha256')][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$UbuntuCloudImageSha256 = 'f73a2d754110b0fc0ddaa3e7c4c1005d9e3067409f20e0c1ddd61c57d36f257a',
     [uri]$QemuImgArchiveUri = 'https://cloudbase.it/downloads/qemu-img-win-x64-2_3_0.zip',
     [ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$QemuImgArchiveSha256 = '8DC1C69D9880919CDAD8C09126A016262D4A9EDF48B87A1EF587914FE4177909',
     [ValidateRange(2, 8)][int]$ProvisioningTimeoutHours = 8,
+    [switch]$RebuildLinux,
     [switch]$Force
 )
 
@@ -178,7 +179,13 @@ function Confirm-GuestPasswordStored {
 
     $plainText = [Net.NetworkCredential]::new('', $GuestSecret).Password
     Write-Host ''
-    Write-Host 'Generated temporary nested guest labadmin/root password:' -ForegroundColor Yellow
+    $passwordLabel = if ($RebuildLinux) {
+        'Generated replacement Linux guest labadmin/root password (Windows password is unchanged):'
+    }
+    else {
+        'Generated temporary nested guest labadmin/root password:'
+    }
+    Write-Host $passwordLabel -ForegroundColor Yellow
     Write-Host $plainText -ForegroundColor Yellow
     Write-Host 'This password is displayed once and is not written to configuration, status, or result output.'
     $confirmation = (Read-Host 'Store it securely, then type READY to continue').Trim()
@@ -276,12 +283,15 @@ Write-Output "AZURE_MIGRATE_HYPERV_INSPECTION=$($result | ConvertTo-Json -Compre
         -ResourceGroupName $script:sourceResourceGroupName -VirtualMachineName $script:hyperVHostName `
         -ScriptText $inspectionScript -FailureMessage 'Could not inspect the Hyper-V host.'
     $inspection = Get-RemoteResult -Message $inspectionMessage -Marker 'AZURE_MIGRATE_HYPERV_INSPECTION='
-    if ($inspection.state -eq 'Ready' -and -not $Force) {
+    if ($inspection.state -eq 'Ready' -and -not $Force -and -not $RebuildLinux) {
         Write-HyperVResult -Status AlreadyReady
         return
     }
 
-    if (@($inspection.features | Where-Object { -not $_.installed }).Count -gt 0) {
+    if ($RebuildLinux) {
+        Write-HyperVProgress 'Linux-only rebuild requested; preserving existing Hyper-V and routing roles.'
+    }
+    elseif (@($inspection.features | Where-Object { -not $_.installed }).Count -gt 0) {
         Write-HyperVProgress 'Installing Hyper-V, Remote Access, and Routing roles. This can take several minutes.'
         $featureScript = @'
 $ErrorActionPreference = 'Stop'

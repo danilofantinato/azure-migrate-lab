@@ -85,8 +85,8 @@ $guestAssetText = Get-Content -LiteralPath $guestAssetPath -Raw
 foreach ($requiredText in @(
     "[string]`$DeploymentName = 'azure-migrate-lab'"
     "https://go.microsoft.com/fwlink/p/?LinkID=2195280&clcid=0x409&culture=en-us&country=US"
-    'https://cloud-images.ubuntu.com/releases/jammy/release-20260913/ubuntu-22.04-server-cloudimg-amd64.img'
-    '9144540e8af7637d258b50dbabe82ce1aa6752c9574fedfb048270da0e087899'
+    'https://cloud-images.ubuntu.com/releases/jammy/release-20251031/ubuntu-22.04-server-cloudimg-amd64.img'
+    'f73a2d754110b0fc0ddaa3e7c4c1005d9e3067409f20e0c1ddd61c57d36f257a'
     'https://cloudbase.it/downloads/qemu-img-win-x64-2_3_0.zip'
     '8DC1C69D9880919CDAD8C09126A016262D4A9EDF48B87A1EF587914FE4177909'
     "'properties.outputs.sourceResourceGroupId.value'"
@@ -94,6 +94,10 @@ foreach ($requiredText in @(
     "'Hyper-V','RemoteAccess','Routing'"
     'AZURE_MIGRATE_HYPERV_RESULT='
     "[ValidateSet('AlreadyReady', 'Provisioning', 'Ready')]"
+    '[switch]$RebuildLinux'
+    '-not $Force -and -not $RebuildLinux'
+    'Windows password is unchanged'
+    'Linux-only rebuild requested; preserving existing Hyper-V and routing roles.'
     "-UserId 'SYSTEM'"
     "Read-Host 'Store it securely, then type READY to continue'"
     'Join-Path $env:TEMP "azure-migrate-lab-az-extensions-'
@@ -182,6 +186,7 @@ foreach ($requiredText in @(
     "if (`$windowsVm.State -ne 'Off') { return }"
     "New-VM -Name 'source-linux01' -Generation `$linuxGeneration -MemoryStartupBytes 4GB"
     "Set-VMProcessor -VMName 'source-linux01' -Count 2"
+    "Set-VMFirmware -VMName 'source-linux01' -EnableSecureBoot Off -FirstBootDevice `$osDisk"
     "-MacAddress '00155D030010'"
     "-MacAddress '00155DFA0010'"
     "-MacAddress '00155D030020'"
@@ -207,7 +212,8 @@ foreach ($requiredText in @(
     'New-LinuxCloudUserData -GuestSecret $GuestSecret'
     'New-LinuxNetworkConfig'
     'network-config'
-    "`$linuxImagePreparationVersion = 'generic-cloudimg-v1'"
+    "`$linuxImagePreparationVersion = 'generic-cloudimg-kernel-5.15.0-161-v2'"
+    'apt-mark hold linux-image-virtual linux-virtual linux-headers-virtual'
     '[Text.UTF8Encoding]::new($false)'
     "`$settings.BIOSSerialNumber = 'ds=nocloud'"
     'ModifySystemSettings($settings.GetText(1))'
@@ -234,7 +240,6 @@ foreach ($requiredText in @(
     'Get-LinuxVmGeneration -OsVhdPath $osVhd'
     "if (`$partitionStyle -eq 'GPT') { return 2 }"
     "if (`$partitionStyle -eq 'MBR') { return 1 }"
-    '-SecureBootTemplate MicrosoftUEFICertificateAuthority -FirstBootDevice $osDisk'
     'Test-Path -LiteralPath "$osVhd.prepared"'
     'Stop-VM -VM $existingVm -TurnOff -Force'
     'Remove-VM -VM $existingVm -Force'
@@ -252,6 +257,9 @@ foreach ($requiredText in @(
     if (-not $guestAssetText.Contains($requiredText)) {
         throw "Nested guest provisioning is missing the contract: $requiredText"
     }
+}
+if ($guestAssetText.Contains("Set-VMFirmware -VMName 'source-linux01' -EnableSecureBoot On")) {
+    throw 'Nested Linux Secure Boot must remain disabled for physical-server Mobility Service replication.'
 }
 
 foreach ($forbiddenText in @(

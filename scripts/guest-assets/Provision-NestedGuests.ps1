@@ -27,7 +27,7 @@ $routedGateway = '10.10.3.1'
 $natGateway = '192.168.250.1'
 $natName = 'AzureMigrateNestedNat'
 $windowsImagePreparationVersion = 'iso-dynamic-v2'
-$linuxImagePreparationVersion = 'generic-cloudimg-v1'
+$linuxImagePreparationVersion = 'generic-cloudimg-kernel-5.15.0-161-v2'
 $script:currentPhase = 'Starting'
 
 function Write-SanitizedStatus {
@@ -508,6 +508,8 @@ function New-LinuxCloudUserData {
                 '    shell: /bin/bash'
                 '    lock_passwd: false'
                 '    sudo: ALL=(ALL) NOPASSWD:ALL'
+                'bootcmd:'
+                '  - [sh, -c, "apt-mark hold linux-image-virtual linux-virtual linux-headers-virtual linux-image-generic linux-generic linux-headers-generic 2>/dev/null || true"]'
                 'packages:'
                 '  - nginx'
                 'write_files:'
@@ -741,7 +743,7 @@ function Initialize-LinuxVm {
     $osDisk = Get-VMHardDiskDrive -VMName 'source-linux01' | Where-Object Path -eq $osVhd | Select-Object -First 1
     if ($null -eq $osDisk) { throw 'The source-linux01 OS disk is not attached.' }
     if ($linuxGeneration -eq 2) {
-        Set-VMFirmware -VMName 'source-linux01' -EnableSecureBoot On -SecureBootTemplate MicrosoftUEFICertificateAuthority -FirstBootDevice $osDisk
+        Set-VMFirmware -VMName 'source-linux01' -EnableSecureBoot Off -FirstBootDevice $osDisk
     }
     else { Set-VMBios -VMName 'source-linux01' -StartupOrder @('IDE', 'CD', 'LegacyNetworkAdapter', 'Floppy') }
 }

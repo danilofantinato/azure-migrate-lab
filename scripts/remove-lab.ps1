@@ -3,6 +3,7 @@ param(
     [string]$ConfigFile,
     [string]$DeploymentName = 'azure-migrate-lab',
     [switch]$IncludeLinkedMigrationResources,
+    [switch]$RemoveResourceLocks,
     [switch]$KeepDeploymentHistory,
     [switch]$ResetLocalState
 )
@@ -72,6 +73,45 @@ function Test-AzureResourceGroupExists {
     return [Convert]::ToBoolean($exists.Trim())
 }
 
+function Get-AzureResourceGroupLocks {
+    param(
+        [Parameter(Mandatory)][string]$SubscriptionId,
+        [Parameter(Mandatory)][string]$ResourceGroupName,
+        [Parameter(Mandatory)][string]$ResourceGroupId
+    )
+
+    $locksJson = Invoke-AzureCliText @(
+        'lock', 'list',
+        '--subscription', $SubscriptionId,
+        '--resource-group', $ResourceGroupName,
+        '--output', 'json',
+        '--only-show-errors'
+    ) "Could not inventory resource locks in '$ResourceGroupName'."
+    $locks = @($locksJson | ConvertFrom-Json)
+    foreach ($lock in $locks) {
+        $lockId = [string]$lock.id
+        $marker = '/providers/Microsoft.Authorization/locks/'
+        $markerIndex = $lockId.LastIndexOf($marker, [StringComparison]::OrdinalIgnoreCase)
+        if ($markerIndex -lt 0) {
+            throw "Unexpected Azure resource lock ID: $lockId"
+        }
+        $lockScope = $lockId.Substring(0, $markerIndex)
+        if (
+            -not $lockScope.Equals($ResourceGroupId, [StringComparison]::OrdinalIgnoreCase) -and
+            -not $lockScope.StartsWith("$ResourceGroupId/", [StringComparison]::OrdinalIgnoreCase)
+        ) {
+            throw "Resource lock '$lockId' is outside the exact lab resource group scope."
+        }
+        [pscustomobject]@{
+            Id = $lockId
+            Name = [string]$lock.name
+            Level = [string]$lock.level
+            Scope = $lockScope
+            SubscriptionId = $SubscriptionId
+        }
+    }
+}
+
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
     throw 'Azure CLI was not found. Install it before running this script.'
 }
@@ -133,6 +173,24 @@ try {
     }
     if ($targetResourceGroupId -notmatch "(?i)^/subscriptions/$([regex]::Escape($targetSubscriptionId))/resourceGroups/") {
         throw 'Target resource group output does not belong to the configured target subscription.'
+    }
+
+    $resourceLocks = @()
+    if ($sourceResourceGroupExists) {
+        $resourceLocks += @(
+            Get-AzureResourceGroupLocks `
+                -SubscriptionId $sourceSubscriptionId `
+                -ResourceGroupName $sourceResourceGroupName `
+                -ResourceGroupId $sourceResourceGroupId
+        )
+    }
+    if ($targetResourceGroupExists) {
+        $resourceLocks += @(
+            Get-AzureResourceGroupLocks `
+                -SubscriptionId $targetSubscriptionId `
+                -ResourceGroupName $targetResourceGroupName `
+                -ResourceGroupId $targetResourceGroupId
+        )
     }
 
     $deploymentHistoryMap = @{}
@@ -244,6 +302,15 @@ try {
     else {
         Write-Host 'External solution-linked resources: excluded; use -IncludeLinkedMigrationResources to inventory and remove them.'
     }
+    if ($resourceLocks.Count -eq 0) {
+        Write-Host 'Resource locks: none found'
+    }
+    else {
+        Write-Host "Resource locks ($(if ($RemoveResourceLocks) { 'selected for removal' } else { 'retained' })):"
+        foreach ($resourceLock in $resourceLocks) {
+            Write-Host "- $($resourceLock.Id) [$($resourceLock.Level)]"
+        }
+    }
     if ($KeepDeploymentHistory) {
         Write-Host 'Subscription deployment history: retained by -KeepDeploymentHistory.'
     }
@@ -269,11 +336,16 @@ try {
             SourceResourceGroupId = $sourceResourceGroupId
             TargetResourceGroupId = $targetResourceGroupId
             LinkedResourceIds = $linkedResourceIds
+            ResourceLocks = $resourceLocks
             DeploymentHistory = $deploymentHistory
             LocalStatePaths = if ($ResetLocalState) { $localStatePaths } else { @() }
         } | ConvertTo-Json -Depth 4 -Compress
         Write-Output "AZURE_MIGRATE_REMOVAL_RESULT=$result"
         return
+    }
+
+    if ($resourceLocks.Count -gt 0 -and -not $RemoveResourceLocks) {
+        throw 'Lab-scoped resource locks block cleanup. Review the inventory and rerun with -RemoveResourceLocks to delete only those exact lock IDs.'
     }
 
     $confirmation = (Read-Host 'Type DELETE LAB to permanently delete the inventoried resources').Trim()
@@ -289,6 +361,16 @@ try {
                 '--ids', $resourceId,
                 '--only-show-errors'
             ) "Could not delete solution-linked resource '$resourceId'." | Out-Null
+        }
+    }
+    foreach ($resourceLock in $resourceLocks) {
+        if ($PSCmdlet.ShouldProcess($resourceLock.Id, 'Delete lab-scoped resource lock')) {
+            Invoke-AzureCliText @(
+                'lock', 'delete',
+                '--subscription', $resourceLock.SubscriptionId,
+                '--ids', $resourceLock.Id,
+                '--only-show-errors'
+            ) "Could not delete resource lock '$($resourceLock.Id)'." | Out-Null
         }
     }
     if ($sourceResourceGroupExists -and $PSCmdlet.ShouldProcess($sourceResourceGroupId, 'Delete source resource group')) {
@@ -343,6 +425,7 @@ try {
         SourceResourceGroupId = $sourceResourceGroupId
         TargetResourceGroupId = $targetResourceGroupId
         LinkedResourceIds = $linkedResourceIds
+        ResourceLocks = $resourceLocks
         DeploymentHistory = $deploymentHistory
         LocalStatePaths = if ($ResetLocalState) { $localStatePaths } else { @() }
     } | ConvertTo-Json -Depth 4 -Compress

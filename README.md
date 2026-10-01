@@ -553,6 +553,8 @@ Run the local regression checks without contacting Azure:
 
 `pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\nested-hyperv.tests.ps1`
 
+`pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\tests\unregister-appliance.tests.ps1`
+
 ### Preview only
 
 To run all validation and stop after what-if without deploying resources:
@@ -588,11 +590,22 @@ Preview guarded cleanup before deleting anything:
 ```powershell
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\remove-lab.ps1 -WhatIf
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\remove-lab.ps1 -IncludeLinkedMigrationResources
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\remove-lab.ps1 -IncludeLinkedMigrationResources -ResetLocalState
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\remove-lab.ps1 -IncludeLinkedMigrationResources -RemoveResourceLocks -ResetLocalState
 ```
+
+After completing or disabling replication for every protected machine, run
+`scripts/UnregisterApplianceFromAzure.ps1` on the replication appliance before
+deleting its VM. The script identifies the appliance from its local registry
+and `Appliance.json`, refuses to continue while protected items remain, and
+removes only that appliance's container mappings, container, provider, and
+eligible fabric.
 
 Cleanup inventories exact deployment output IDs, never uses a broad resource
 group prefix, explicitly rejects `NetworkWatcherRG`, and requires `DELETE LAB`.
+It inventories resource locks under the exact source and target resource-group
+IDs and retains them unless `-RemoveResourceLocks` is supplied. With that
+switch, only the inventoried lab-scoped lock IDs are removed before resource
+group deletion.
 Linked vault/storage resources outside the lab target resource group are included
 only with `-IncludeLinkedMigrationResources` and only when the project solution
 metadata exposes their ARM IDs. After resource deletion, cleanup also removes

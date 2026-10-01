@@ -605,8 +605,19 @@ Use Azure Network Watcher connection troubleshooting and VM boot diagnostics whe
 1. Clean up every test migration.
 2. Complete or stop active migrations and replication.
 3. Remove source machines from the replication appliance inventory when appropriate.
-4. Remove appliance registrations and project-generated migration resources by following current portal guidance.
-5. Confirm no retained replica disks, snapshots, cache storage, Recovery Services vault items, or target VMs are needed.
+4. On the replication appliance, run:
+
+   ```powershell
+   pwsh -NoProfile -ExecutionPolicy Bypass `
+       -File .\UnregisterApplianceFromAzure.ps1
+   ```
+
+   The script refuses to continue while protected replication items remain. It
+   removes only the mappings, container, provider, and eligible fabric that
+   match the local appliance registry and `Appliance.json`.
+5. Remove any remaining discovery-appliance registration and project-generated
+   migration resources by following current portal guidance.
+6. Confirm no retained replica disks, snapshots, cache storage, Recovery Services vault items, or target VMs are needed.
 
 Do not delete the lab resource groups while replication or a test migration is active. Clean up test migrations and stop or complete replication first.
 
@@ -628,12 +639,15 @@ only when they should also be removed:
 pwsh -NoProfile -ExecutionPolicy Bypass `
     -File .\scripts\remove-lab.ps1 `
     -IncludeLinkedMigrationResources `
+    -RemoveResourceLocks `
     -ResetLocalState
 ```
 
 The script uses exact deployment output IDs, shows the inventory first, rejects
 `NetworkWatcherRG`, and requires typing `DELETE LAB`. It never discovers groups
-by a broad name prefix. It removes exact root and nested subscription deployment
+by a broad name prefix. It retains resource locks by default; use
+`-RemoveResourceLocks` to remove only lock IDs validated beneath the exact lab
+resource-group scopes. It removes exact root and nested subscription deployment
 history after deleting resources, including when the resource groups are already
 absent. Use `-KeepDeploymentHistory` to preserve history. Deleting a deployment
 record alone never deletes resources. `-ResetLocalState` also removes the local

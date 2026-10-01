@@ -24,12 +24,18 @@ foreach ($requiredText in @(
     "if (`$resourceGroupName -ieq 'NetworkWatcherRG')"
     "Type DELETE LAB to permanently delete the inventoried resources"
     '[switch]$IncludeLinkedMigrationResources'
+    '[switch]$RemoveResourceLocks'
     '[switch]$KeepDeploymentHistory'
     '[switch]$ResetLocalState'
     "'deployment', 'operation', 'sub', 'list'"
     "'deployment', 'sub', 'delete'"
     'DeploymentHistory = $deploymentHistory'
     'function Test-AzureResourceGroupExists'
+    'function Get-AzureResourceGroupLocks'
+    "'lock', 'list'"
+    "'lock', 'delete'"
+    'ResourceLocks = $resourceLocks'
+    'rerun with -RemoveResourceLocks'
     '$sourceResourceGroupExists -and $PSCmdlet.ShouldProcess'
     '$targetResourceGroupExists -and $PSCmdlet.ShouldProcess'
     "if (`$_.Kind -eq 'Root') { 1 } else { 0 }"

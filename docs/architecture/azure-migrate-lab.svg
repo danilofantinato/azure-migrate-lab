@@ -1,0 +1,217 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1000" viewBox="0 0 1800 1000" role="img" aria-labelledby="title description">
+  <title id="title">Azure Migrate physical-server simulation lab infrastructure</title>
+  <desc id="description">Current-state deployment and network view of the source and migration target subscriptions, Azure virtual networks, appliances, Hyper-V host, nested guests, Azure Migrate, and migration destinations.</desc>
+  <defs>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0078d4"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#107c10"/>
+    </marker>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d83b01"/>
+    </marker>
+    <style>
+      text { font-family: "Segoe UI", Arial, sans-serif; fill: #242424; }
+      .title { font-size: 28px; font-weight: 700; }
+      .subtitle { font-size: 14px; fill: #525252; }
+      .boundary { fill: #f7f9fc; stroke: #0078d4; stroke-width: 2; }
+      .resource-group { fill: #ffffff; stroke: #5b5fc7; stroke-width: 1.5; }
+      .vnet { fill: #f1f8ff; stroke: #0078d4; stroke-width: 2; }
+      .subnet { fill: #ffffff; stroke: #8a8886; stroke-width: 1.5; stroke-dasharray: 6 4; }
+      .nested { fill: #fff8f0; stroke: #d83b01; stroke-width: 1.5; }
+      .node { fill: #ffffff; stroke: #605e5c; stroke-width: 1.5; rx: 8; }
+      .azure-node { fill: #ffffff; stroke: #0078d4; stroke-width: 2; rx: 8; }
+      .optional { stroke-dasharray: 7 4; }
+      .boundary-label { font-size: 17px; font-weight: 700; fill: #004578; }
+      .group-label { font-size: 14px; font-weight: 600; fill: #3b3a39; }
+      .node-title { font-size: 13px; font-weight: 700; text-anchor: middle; }
+      .node-detail { font-size: 12px; text-anchor: middle; fill: #525252; }
+      .azure-title { font-size: 12px; font-weight: 700; text-anchor: start; }
+      .azure-detail { font-size: 11px; text-anchor: start; fill: #525252; }
+      .icon { fill: #0078d4; }
+      .icon-text { font-size: 12px; font-weight: 700; text-anchor: middle; fill: #ffffff; }
+      .request { fill: none; stroke: #0078d4; stroke-width: 2; marker-end: url(#arrow-blue); }
+      .data { fill: none; stroke: #107c10; stroke-width: 2.2; marker-end: url(#arrow-green); }
+      .control { fill: none; stroke: #d83b01; stroke-width: 2; stroke-dasharray: 7 5; marker-end: url(#arrow-orange); }
+      .edge-label { font-size: 11px; font-weight: 600; paint-order: stroke; stroke: #ffffff; stroke-width: 5px; stroke-linejoin: round; }
+      .draft { fill: #fff4ce; stroke: #d83b01; stroke-width: 1.5; rx: 6; }
+      .draft-text { font-size: 12px; font-weight: 700; fill: #7a2800; text-anchor: middle; }
+      .legend { font-size: 11px; fill: #3b3a39; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1000" fill="#ffffff"/>
+  <text class="title" x="40" y="42">Azure Migrate Physical-Server Simulation Lab</text>
+
+  <g aria-label="Source subscription boundaries">
+    <rect class="boundary" x="30" y="125" width="1110" height="780" rx="12"/>
+    <text class="boundary-label" x="50" y="153">Simulated source subscription | East US 2</text>
+    <rect class="resource-group" x="50" y="170" width="1070" height="715" rx="10"/>
+    <text class="group-label" x="70" y="196">Source resource group</text>
+    <rect class="vnet" x="235" y="215" width="865" height="330" rx="10"/>
+    <text class="boundary-label" x="255" y="243">Source Azure Virtual Network | 10.10.0.0/16</text>
+    <rect class="subnet" x="255" y="265" width="405" height="255" rx="8"/>
+    <text class="group-label" x="275" y="291">Appliance subnet | 10.10.1.0/24</text>
+    <rect class="subnet" x="680" y="265" width="395" height="255" rx="8"/>
+    <text class="group-label" x="700" y="291">Hyper-V host subnet | 10.10.2.0/24</text>
+    <rect class="nested" x="385" y="585" width="715" height="270" rx="10"/>
+    <text class="boundary-label" x="405" y="613">Inside Hyper-V host (expanded detail; not an Azure VNet)</text>
+  </g>
+
+  <g aria-label="Target subscription boundaries">
+    <rect class="boundary" x="1160" y="125" width="610" height="780" rx="12"/>
+    <text class="boundary-label" x="1180" y="153">Migration target subscription | West US 2</text>
+    <rect class="resource-group" x="1180" y="170" width="570" height="715" rx="10"/>
+    <text class="group-label" x="1200" y="196">Target resource group</text>
+    <rect class="vnet" x="1200" y="390" width="530" height="465" rx="10"/>
+    <text class="boundary-label" x="1220" y="418">Target Azure Virtual Network | 10.20.0.0/16</text>
+    <rect class="subnet" x="1220" y="445" width="235" height="380" rx="8"/>
+    <text class="group-label" x="1240" y="472">Test subnet | 10.20.1.0/24</text>
+    <rect class="subnet" x="1475" y="445" width="235" height="380" rx="8"/>
+    <text class="group-label" x="1495" y="472">Final subnet | 10.20.2.0/24</text>
+  </g>
+
+  <g aria-label="Architecture flows">
+    <path class="control" d="M 125 112 H 15 V 264 H 85"/>
+    <text class="edge-label" x="25" y="254">RDP / appliance UI</text>
+
+    <path class="request" d="M 385 345 H 475 V 456 H 520"/>
+    <text class="edge-label" x="403" y="336">Discovery traffic</text>
+    <path class="request" d="M 385 455 H 520"/>
+    <text class="edge-label" x="406" y="447">Mobility push</text>
+    <path class="request" d="M 625 456 H 665 V 374 H 735"/>
+    <text class="edge-label" x="634" y="447">Next hop 10.10.2.10</text>
+    <path class="request" d="M 825 410 V 650 H 505"/>
+    <text class="edge-label" x="832" y="558">IP forwarding</text>
+    <path class="request" d="M 555 680 H 670"/>
+    <text class="edge-label" x="570" y="671">Windows routed NIC</text>
+    <path class="request" d="M 555 680 V 770 H 670"/>
+    <text class="edge-label" x="568" y="758">Linux routed NIC</text>
+    <path class="data" d="M 505 710 V 490 H 330"/>
+    <text class="edge-label" x="350" y="700">Mobility HTTPS 443/9443</text>
+
+    <path class="data" d="M 760 680 H 940 V 720"/>
+    <path class="data" d="M 760 770 H 940 V 720"/>
+    <text class="edge-label" x="810" y="706">Guest egress</text>
+    <path class="data" d="M 1015 720 H 1065 V 500 H 845"/>
+    <text class="edge-label" x="965" y="570">Host WinNAT</text>
+    <path class="data" d="M 225 390 H 245 V 85 H 305"/>
+    <text class="edge-label" x="252" y="78">Outbound internet</text>
+
+    <path class="data" d="M 385 345 H 460 V 85 H 475"/>
+    <text class="edge-label" x="390" y="108">Inventory / performance HTTPS</text>
+    <path class="data" d="M 565 85 H 1295 V 235"/>
+    <text class="edge-label" x="890" y="88">Azure Migrate HTTPS</text>
+    <path class="data" d="M 385 455 V 535 H 1135 V 280 H 1295"/>
+    <text class="edge-label" x="760" y="527">Replication HTTPS</text>
+
+    <path class="control" d="M 1365 303 H 1240 V 646 H 1260"/>
+    <text class="edge-label" x="1248" y="632">Guided test migration</text>
+    <path class="control" d="M 1455 264 H 1685 V 646 H 1665"/>
+    <text class="edge-label" x="1505" y="255">Guided final migration</text>
+  </g>
+
+  <g aria-label="External actors and endpoints">
+    <rect class="node" x="55" y="58" width="140" height="54"/>
+    <text class="node-title" x="125" y="80">Administrator</text>
+    <text class="node-detail" x="125" y="101">allowed public CIDR</text>
+    <rect class="node" x="305" y="58" width="140" height="54"/>
+    <text class="node-title" x="375" y="90">Internet</text>
+    <rect class="node" x="475" y="58" width="180" height="54"/>
+    <text class="node-title" x="565" y="80">Azure service endpoints</text>
+    <text class="node-detail" x="565" y="101">HTTPS</text>
+  </g>
+
+  <g aria-label="Source Azure resources">
+    <rect class="azure-node" x="85" y="225" width="140" height="78"/>
+    <circle class="icon" cx="115" cy="252" r="18"/><text class="icon-text" x="115" y="256">IP</text>
+    <text class="azure-title" x="140" y="250">Public IPs</text>
+    <text class="azure-detail" x="140" y="273">3 VM + egress</text>
+
+    <rect class="azure-node" x="85" y="350" width="140" height="78"/>
+    <circle class="icon" cx="115" cy="377" r="18"/><text class="icon-text" x="115" y="381">NAT</text>
+    <text class="azure-title" x="140" y="375">NAT Gateway</text>
+    <text class="azure-detail" x="140" y="399">source egress</text>
+
+    <rect class="azure-node" x="285" y="310" width="130" height="72"/>
+    <circle class="icon" cx="310" cy="336" r="16"/><text class="icon-text" x="310" y="340">VM</text>
+    <text class="azure-title" x="335" y="334">Discovery</text>
+    <text class="azure-detail" x="335" y="358">10.10.1.10</text>
+
+    <rect class="azure-node" x="285" y="420" width="130" height="72"/>
+    <circle class="icon" cx="310" cy="446" r="16"/><text class="icon-text" x="310" y="450">VM</text>
+    <text class="azure-title" x="335" y="444">Replication</text>
+    <text class="azure-detail" x="335" y="468">10.10.1.20</text>
+
+    <rect class="azure-node" x="520" y="310" width="125" height="72"/>
+    <circle class="icon" cx="545" cy="336" r="16"/><text class="icon-text" x="545" y="340">NSG</text>
+    <text class="azure-title" x="570" y="334">NSGs</text>
+    <text class="azure-detail" x="570" y="358">subnet + NIC</text>
+
+    <rect class="azure-node" x="520" y="420" width="125" height="72"/>
+    <circle class="icon" cx="545" cy="446" r="16"/><text class="icon-text" x="545" y="450">UDR</text>
+    <text class="azure-title" x="570" y="444">Route table</text>
+    <text class="azure-detail" x="570" y="468">10.10.3.0/24</text>
+
+    <rect class="azure-node" x="735" y="335" width="180" height="78"/>
+    <circle class="icon" cx="765" cy="362" r="18"/><text class="icon-text" x="765" y="366">VM</text>
+    <text class="azure-title" x="790" y="358">Hyper-V host</text>
+    <text class="azure-detail" x="790" y="382">10.10.2.10 | IP forwarding</text>
+
+    <rect class="azure-node" x="935" y="335" width="125" height="78"/>
+    <circle class="icon" cx="960" cy="362" r="16"/><text class="icon-text" x="960" y="366">NSG</text>
+    <text class="azure-title" x="985" y="358">Host NSG</text>
+  </g>
+
+  <g aria-label="Nested Hyper-V resources">
+    <rect class="node" x="415" y="650" width="140" height="62"/>
+    <text class="node-title" x="485" y="674">NestedRouted</text>
+    <text class="node-detail" x="485" y="694">10.10.3.1/24</text>
+    <rect class="node" x="670" y="650" width="140" height="62"/>
+    <text class="node-title" x="740" y="674">source-win01</text>
+    <text class="node-detail" x="740" y="694">10.10.3.10</text>
+    <rect class="node" x="670" y="740" width="140" height="62"/>
+    <text class="node-title" x="740" y="764">source-linux01</text>
+    <text class="node-detail" x="740" y="784">10.10.3.20</text>
+    <rect class="node" x="940" y="690" width="140" height="62"/>
+    <text class="node-title" x="1010" y="714">NestedNat</text>
+    <text class="node-detail" x="1010" y="734">192.168.250.1/24</text>
+  </g>
+
+  <g aria-label="Target Azure resources">
+    <rect class="azure-node optional" x="1275" y="225" width="180" height="78"/>
+    <circle class="icon" cx="1305" cy="252" r="18"/><text class="icon-text" x="1305" y="256">AM</text>
+    <text class="azure-title" x="1330" y="250">Azure Migrate</text>
+    <text class="azure-detail" x="1330" y="273">project + solutions (optional)</text>
+
+    <rect class="azure-node optional" x="1530" y="225" width="170" height="78"/>
+    <circle class="icon" cx="1560" cy="252" r="18"/><text class="icon-text" x="1560" y="256">NAT</text>
+    <text class="azure-title" x="1585" y="250">NAT Gateway</text>
+    <text class="azure-detail" x="1585" y="273">optional target egress</text>
+
+    <rect class="azure-node" x="1260" y="510" width="150" height="72"/>
+    <circle class="icon" cx="1287" cy="536" r="16"/><text class="icon-text" x="1287" y="540">NSG</text>
+    <text class="azure-title" x="1315" y="535">Test NSG</text>
+    <rect class="node" x="1260" y="610" width="150" height="72"/>
+    <text class="node-title" x="1335" y="638">Test migration</text>
+    <text class="node-detail" x="1335" y="659">destination</text>
+
+    <rect class="azure-node" x="1515" y="510" width="150" height="72"/>
+    <circle class="icon" cx="1542" cy="536" r="16"/><text class="icon-text" x="1542" y="540">NSG</text>
+    <text class="azure-title" x="1570" y="535">Final NSG</text>
+    <rect class="node" x="1515" y="610" width="150" height="72"/>
+    <text class="node-title" x="1590" y="638">Final migration</text>
+    <text class="node-detail" x="1590" y="659">destination</text>
+  </g>
+
+  <g aria-label="Legend">
+    <rect x="45" y="925" width="1710" height="48" fill="#ffffff" stroke="#b3bac5" rx="6"/>
+    <line class="request" x1="70" y1="949" x2="125" y2="949"/><text class="legend" x="135" y="953">Management/request</text>
+    <line class="data" x1="300" y1="949" x2="355" y2="949"/><text class="legend" x="365" y="953">Data movement</text>
+    <line class="control" x1="510" y1="949" x2="565" y2="949"/><text class="legend" x="575" y="953">Control-plane/guided action</text>
+    <rect x="805" y="938" width="45" height="22" fill="#ffffff" stroke="#0078d4" stroke-width="2" stroke-dasharray="7 4" rx="4"/>
+    <text class="legend" x="860" y="953">Optional Azure resource</text>
+    <text class="legend" x="1090" y="953">Editable source uses resolver-verified Azure icons.</text>
+  </g>
+</svg>

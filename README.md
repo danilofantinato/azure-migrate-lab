@@ -18,50 +18,23 @@ The two source machines are installed from ordinary Windows and Ubuntu media ins
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    accTitle: Two-subscription Azure Migrate lab architecture
-    accDescr: Shows an administrator reaching three CIDR-restricted Azure Windows VMs while discovery and replication appliances reach two nested Hyper-V source guests through a routed host.
+[![Azure Migrate lab infrastructure diagram](docs/architecture/azure-migrate-lab.svg)](docs/architecture/azure-migrate-lab.drawio)
 
-    subgraph SourceSub[Simulated source subscription]
-        Admin[Administrator CIDR]
-        Discovery[Discovery appliance 10.10.1.10]
-        Replication[Replication appliance 10.10.1.20]
-        Route[UDR for 10.10.3.0/24]
-        Host[Hyper-V host 10.10.2.10]
-        Routed[NestedRouted 10.10.3.1/24]
-        GuestNat[NestedNat 192.168.250.1/24]
-        Windows[Windows guest 10.10.3.10]
-        Linux[Linux guest 10.10.3.20]
-        Internet[Internet through host WinNAT]
+The diagram shows the current deployment and network topology. Open the [editable draw.io source](docs/architecture/azure-migrate-lab.drawio) to inspect resolver-verified Azure service icons, evidence metadata, and the full-size canvas.
 
-        Admin -->|RDP and appliance UI| Discovery
-        Admin -->|RDP| Replication
-        Admin -->|RDP| Host
-        Discovery --> Route
-        Replication --> Route
-        Route -->|Next hop 10.10.2.10| Host
-        Host --> Routed
-        Routed --> Windows
-        Routed --> Linux
-        Windows -->|Mobility Service| Replication
-        Linux -->|Mobility Service| Replication
-        Windows --> GuestNat
-        Linux --> GuestNat
-        GuestNat --> Internet
-    end
-
-    subgraph TargetSub[Migration target subscription]
-        Migrate[Azure Migrate project]
-        TestSubnet[Isolated test subnet]
-        FinalSubnet[Isolated final subnet]
-    end
-
-    Discovery -->|Metadata and performance| Migrate
-    Replication -->|Replication over HTTPS| Migrate
-    Migrate -->|Test migration| TestSubnet
-    Migrate -->|Final migration| FinalSubnet
-```
+<!-- drawio-doctor-metadata
+{
+  "schemaVersion": 1,
+  "artifact": "docs/architecture/azure-migrate-lab.drawio",
+  "manifest": "docs/architecture/icon-manifest.json",
+  "summary": "docs/architecture/build-summary.json",
+  "state": "Current",
+  "draft": false,
+  "pageCount": 1,
+  "serviceCount": 6,
+  "iconInstanceCount": 12
+}
+-->
 
 Discovery and migration remain separate workflows.
 

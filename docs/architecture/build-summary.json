@@ -1,0 +1,45 @@
+{
+  "status": "built",
+  "output": "C:\\local-code\\azure-migrate\\azure-migrate-lab\\docs\\architecture\\azure-migrate-lab.drawio",
+  "manifest": "C:\\local-code\\azure-migrate\\azure-migrate-lab\\docs\\architecture\\icon-manifest.json",
+  "profile": "production",
+  "draft": false,
+  "page_count": 1,
+  "service_count": 6,
+  "resolved_count": 6,
+  "unresolved_count": 0,
+  "ambiguous_count": 0,
+  "icon_instance_count": 12,
+  "source_counts": {
+    "drawio-shape-index": 6
+  },
+  "serviceSourceCounts": {
+    "drawio-shape-index": 6
+  },
+  "iconInstanceSourceCounts": {
+    "drawio-shape-index": 12
+  },
+  "unused_manifest_count": 0,
+  "unused_manifest_services": [],
+  "finding_count": 0,
+  "error_count": 0,
+  "warning_count": 0,
+  "finding_codes": {},
+  "render_preflight": {
+    "available": false,
+    "executable": null,
+    "source": "not-found",
+    "manual_review_required": true,
+    "checklist": "assets/architecture_review_checklist.md"
+  },
+  "manual_review_required": false,
+  "review_checklist": "drawio-doctor/assets/architecture_review_checklist.md",
+  "integratedValidation": true,
+  "validationStatus": "passed",
+  "validatedHashes": {
+    "spec": "3a6bfed638593fb0124f46b2ad756383d7e35645db0826b4aea48d87e9f0795a",
+    "config": "e93dc52b4ae46149c58a2efab0ddae78373123a9dca6b75d71f6023c17acda18",
+    "drawio": "b87647239e36ab06be7f2ec2dbb4f9e0e1cc9a1d17de138824ebe6e51daac6dd",
+    "manifest": "1d88a27679608a9c385dc1cb38df41041fc28975a7ae9483b54931cf644001ea"
+  }
+}

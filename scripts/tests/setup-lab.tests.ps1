@@ -72,6 +72,7 @@ foreach ($resultChannelText in @(
 }
 foreach ($stepName in @(
     'DeployInfrastructure'
+    'PrepareNestedGuests'
     'VerifyProject'
     'InstallDiscovery'
     'RegisterDiscovery'
@@ -119,7 +120,7 @@ foreach ($replicationInstruction in @(
     'lablinuxroot'
     'Linux password'
     'I will add Physical server details later'
-    'labadmin SSH key installed'
+    'one-time nested guest password displayed during step 2'
     'Migration and modernization > Infrastructure servers > Configuration servers'
     'The appliance is not shown in the discovery-appliance inventory.'
     'RegistrationProviderName'
@@ -133,6 +134,18 @@ foreach ($replicationInstruction in @(
 )) {
     if (-not $scriptText.Contains($replicationInstruction)) {
         throw "Replication checkpoint is missing configuration guidance: $replicationInstruction"
+    }
+}
+foreach ($nestedGuestContract in @(
+    "-ScriptName 'prepare-hyperv-host.ps1'"
+    "-ResultMarker 'AZURE_MIGRATE_HYPERV_RESULT='"
+    "-AllowedStatuses @('AlreadyReady', 'Ready')"
+    "PrivateIP = '10.10.3.10'"
+    "PrivateIP = '10.10.3.20'"
+    "SourceSubnet = '10.10.3.0/24 via Hyper-V host'"
+)) {
+    if (-not $scriptText.Contains($nestedGuestContract)) {
+        throw "Nested guest setup behavior is missing: $nestedGuestContract"
     }
 }
 foreach ($migrationInstruction in @(

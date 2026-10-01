@@ -7,6 +7,7 @@ param(
     [string]$TargetLocation,
     [ValidateSet(
         'DeployInfrastructure',
+        'PrepareNestedGuests',
         'VerifyProject',
         'InstallDiscovery',
         'RegisterDiscovery',
@@ -47,6 +48,7 @@ else {
 $powerShellPath = (Get-Command pwsh -ErrorAction Stop).Source
 $stepDefinitions = @(
     [pscustomobject]@{ Name = 'DeployInfrastructure'; Label = 'Deploy infrastructure' }
+    [pscustomobject]@{ Name = 'PrepareNestedGuests'; Label = 'Prepare nested Hyper-V guests' }
     [pscustomobject]@{ Name = 'VerifyProject'; Label = 'Verify Azure Migrate project' }
     [pscustomobject]@{ Name = 'InstallDiscovery'; Label = 'Install discovery appliance' }
     [pscustomobject]@{ Name = 'RegisterDiscovery'; Label = 'Register discovery appliance' }
@@ -220,6 +222,14 @@ function Invoke-SetupStep {
             }
             return "Deployment $($result.DeploymentName) completed."
         }
+        'PrepareNestedGuests' {
+            $result = Invoke-LabScript `
+                -ScriptName 'prepare-hyperv-host.ps1' `
+                -ScriptArguments @('-ConfigFile', $configFilePath, '-DeploymentName', $DeploymentName) `
+                -ResultMarker 'AZURE_MIGRATE_HYPERV_RESULT=' `
+                -AllowedStatuses @('AlreadyReady', 'Ready')
+            return "Nested guests $($result.WindowsGuestName) ($($result.WindowsGuestIp)) and $($result.LinuxGuestName) ($($result.LinuxGuestIp)) are ready."
+        }
         'VerifyProject' {
             $result = Invoke-LabScript `
                 -ScriptName 'verify-migrate-project.ps1' `
@@ -251,21 +261,21 @@ function Invoke-SetupStep {
                     @{
                         Title = 'Credentials'
                         Rows = @(
-                            [pscustomobject]@{ FriendlyName = 'labwindows'; Type = 'Windows Server'; Username = 'labadmin'; Secret = 'Deployment password' }
-                            [pscustomobject]@{ FriendlyName = 'lablinux'; Type = 'Linux SSH key'; Username = 'labadmin'; Secret = 'ssh/azure-migrate-lab' }
+                            [pscustomobject]@{ FriendlyName = 'labwindows'; Type = 'Windows Server'; Username = 'labadmin'; Secret = 'Nested guest password from step 2' }
+                            [pscustomobject]@{ FriendlyName = 'lablinux'; Type = 'Linux password'; Username = 'labadmin'; Secret = 'Nested guest password from step 2' }
                         )
                     }
                     @{
                         Title = 'Discovery sources'
                         Rows = @(
-                            [pscustomobject]@{ OS = 'Windows'; VM = 'source-win01'; PrivateIP = '10.10.2.10'; Credential = 'labwindows' }
-                            [pscustomobject]@{ OS = 'Linux'; VM = 'source-linux01'; PrivateIP = '10.10.2.20'; Credential = 'lablinux' }
+                            [pscustomobject]@{ OS = 'Windows'; VM = 'source-win01'; PrivateIP = '10.10.3.10'; Credential = 'labwindows' }
+                            [pscustomobject]@{ OS = 'Linux'; VM = 'source-linux01'; PrivateIP = '10.10.3.20'; Credential = 'lablinux' }
                         )
                     }
                 ) `
                 -Notes @(
                     'Friendly names cannot contain hyphens.'
-                    'The Linux private key must be OpenSSH format without a passphrase.'
+                    'Both nested guests use the one-time password displayed during step 2.'
                     'HTTP 401 from graph.windows.net confirms endpoint reachability; it is not a NAT or firewall failure.'
                 ) `
                 -ConfirmationText 'DISCOVERY REGISTERED'
@@ -334,7 +344,7 @@ function Invoke-SetupStep {
                     @{
                         Title = 'Replication traffic'
                         Rows = @(
-                            [pscustomobject]@{ Mode = 'FQDN'; Address = 'amig-repl'; Port = '9443'; SourceSubnet = '10.10.2.0/24' }
+                            [pscustomobject]@{ Mode = 'FQDN'; Address = 'amig-repl'; Port = '9443'; SourceSubnet = '10.10.3.0/24 via Hyper-V host' }
                         )
                     }
                     @{
@@ -347,15 +357,15 @@ function Invoke-SetupStep {
                     @{
                         Title = 'Replication credentials'
                         Rows = @(
-                            [pscustomobject]@{ FriendlyName = 'labwindows'; Type = 'Windows Server'; Username = 'labadmin'; Password = 'Deployment password' }
-                            [pscustomobject]@{ FriendlyName = 'lablinuxroot'; Type = 'Linux password'; Username = 'root'; Password = 'Deployment password' }
+                            [pscustomobject]@{ FriendlyName = 'labwindows'; Type = 'Windows Server'; Username = 'labadmin'; Password = 'Nested guest password from step 2' }
+                            [pscustomobject]@{ FriendlyName = 'lablinuxroot'; Type = 'Linux password'; Username = 'root'; Password = 'Nested guest password from step 2' }
                         )
                     }
                     @{
                         Title = 'Physical servers'
                         Rows = @(
-                            [pscustomobject]@{ OS = 'Windows'; VM = 'source-win01'; PrivateIP = '10.10.2.10'; Credential = 'labwindows' }
-                            [pscustomobject]@{ OS = 'Linux'; VM = 'source-linux01'; PrivateIP = '10.10.2.20'; Credential = 'lablinuxroot' }
+                            [pscustomobject]@{ OS = 'Windows'; VM = 'source-win01'; PrivateIP = '10.10.3.10'; Credential = 'labwindows' }
+                            [pscustomobject]@{ OS = 'Linux'; VM = 'source-linux01'; PrivateIP = '10.10.3.20'; Credential = 'lablinuxroot' }
                         )
                     }
                 ) `
@@ -364,7 +374,7 @@ function Invoke-SetupStep {
                     'The FQDN or NAT IP selection cannot be changed after it is saved. Use FQDN for this lab because the source servers route directly to the appliance on the same VNet.'
                     'Do not select NAT IP. The appliance public IP is for CIDR-restricted RDP only; replication ports 443 and 9443 are not exposed publicly.'
                     'Discovery inventory is reused for assessment selection, but credentials are never copied between appliances. Replication still requires these server entries.'
-                    'The Linux root password is the same one-time deployment password used by the Windows administrator. The lab keeps the labadmin SSH key installed for discovery and administration.'
+                    'The Linux root and labadmin passwords match the one-time nested guest password displayed during step 2.'
                     'Friendly names cannot contain hyphens.'
                     'Using one password for Windows and Linux root is a lab-only convenience, not a production practice.'
                     'Do not confirm this checkpoint while a sizing or prerequisite validation error remains.'

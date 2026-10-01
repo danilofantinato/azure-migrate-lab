@@ -6,7 +6,7 @@ param sourceSubscriptionId string
 @description('Subscription ID that hosts Azure Migrate and the migration target network.')
 param targetSubscriptionId string
 
-@description('Azure region for the simulated source network, appliances, and source virtual machines.')
+@description('Azure region for the simulated source network, appliances, and nested Hyper-V host.')
 param sourceLocation string = 'eastus2'
 
 @description('Azure region for the migration target network, Azure Migrate project, and migration resources.')
@@ -29,20 +29,17 @@ param adminUsername string = 'labadmin'
 @secure()
 param adminPassword string
 
-@description('SSH public key used to administer the Linux source virtual machine.')
-param sshPublicKey string
-
 @description('VM size for the physical discovery appliance. Must provide at least 8 vCPUs and 32 GB RAM.')
 param discoveryApplianceVmSize string = 'Standard_D8as_v7'
 
 @description('VM size for the simplified replication appliance. Must provide at least 8 physical cores and 16 GB RAM.')
 param replicationApplianceVmSize string = 'Standard_D16as_v7'
 
-@description('VM size for the simulated Windows physical server.')
-param windowsSourceVmSize string = 'Standard_D2as_v7'
+@description('VM size for the nested-virtualization Hyper-V host. Must provide at least 16 vCPUs and 64 GB RAM.')
+param hyperVHostVmSize string = 'Standard_D16as_v7'
 
-@description('VM size for the simulated Linux physical server.')
-param linuxSourceVmSize string = 'Standard_D2as_v7'
+@description('Set explicit Standard security while creating the Hyper-V host; disable for incremental updates to an existing host.')
+param configureHyperVHostSecurityType bool = true
 
 @description('Enable daily automatic shutdown schedules for all source-side virtual machines.')
 param autoShutdownEnabled bool = true
@@ -78,11 +75,10 @@ module sourceSubscription './modules/source-subscription.bicep' = {
     adminSourceCidr: adminSourceCidr
     adminUsername: adminUsername
     adminPassword: adminPassword
-    sshPublicKey: sshPublicKey
     discoveryApplianceVmSize: discoveryApplianceVmSize
     replicationApplianceVmSize: replicationApplianceVmSize
-    windowsSourceVmSize: windowsSourceVmSize
-    linuxSourceVmSize: linuxSourceVmSize
+    hyperVHostVmSize: hyperVHostVmSize
+    configureHyperVHostSecurityType: configureHyperVHostSecurityType
     autoShutdownEnabled: autoShutdownEnabled
     autoShutdownTime: autoShutdownTime
     autoShutdownTimeZone: autoShutdownTimeZone
@@ -97,6 +93,7 @@ module targetSubscription './modules/target-subscription.bicep' = {
     location: targetLocation
     namePrefix: namePrefix
     suffix: suffix
+    adminSourceCidr: adminSourceCidr
     deployTargetNatGateway: deployTargetNatGateway
     deployAzureMigrateProject: deployAzureMigrateProject
     tags: tags
@@ -107,8 +104,11 @@ output sourceResourceGroupId string = sourceSubscription.outputs.resourceGroupId
 output targetResourceGroupId string = targetSubscription.outputs.resourceGroupId
 output discoveryApplianceName string = sourceSubscription.outputs.discoveryApplianceName
 output replicationApplianceName string = sourceSubscription.outputs.replicationApplianceName
+output hyperVHostName string = sourceSubscription.outputs.hyperVHostName
 output windowsSourceName string = sourceSubscription.outputs.windowsSourceName
 output linuxSourceName string = sourceSubscription.outputs.linuxSourceName
+output windowsSourcePrivateIp string = sourceSubscription.outputs.windowsSourcePrivateIp
+output linuxSourcePrivateIp string = sourceSubscription.outputs.linuxSourcePrivateIp
 output targetTestSubnetId string = targetSubscription.outputs.testSubnetId
 output targetFinalSubnetId string = targetSubscription.outputs.finalSubnetId
 output azureMigrateProjectId string = targetSubscription.outputs.azureMigrateProjectId

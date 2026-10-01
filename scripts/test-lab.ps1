@@ -85,6 +85,37 @@ function Test-ResourceExists {
     return $Label
 }
 
+function Test-SubnetExists {
+    param(
+        [Parameter(Mandatory)][string]$SubscriptionId,
+        [Parameter(Mandatory)][string]$ResourceId,
+        [Parameter(Mandatory)][string]$Label
+    )
+
+    $segments = $ResourceId.Trim('/').Split('/')
+    $resourceGroupIndex = [Array]::IndexOf($segments, 'resourceGroups')
+    $virtualNetworkIndex = [Array]::IndexOf($segments, 'virtualNetworks')
+    $subnetIndex = [Array]::IndexOf($segments, 'subnets')
+    if (
+        $resourceGroupIndex -lt 0 -or $resourceGroupIndex + 1 -ge $segments.Count -or
+        $virtualNetworkIndex -lt 0 -or $virtualNetworkIndex + 1 -ge $segments.Count -or
+        $subnetIndex -lt 0 -or $subnetIndex + 1 -ge $segments.Count
+    ) {
+        throw "Subnet resource ID is invalid: '$ResourceId'."
+    }
+
+    Invoke-AzureCliText @(
+        'network', 'vnet', 'subnet', 'show',
+        '--subscription', $SubscriptionId,
+        '--resource-group', $segments[$resourceGroupIndex + 1],
+        '--vnet-name', $segments[$virtualNetworkIndex + 1],
+        '--name', $segments[$subnetIndex + 1],
+        '--output', 'none',
+        '--only-show-errors'
+    ) "Could not read $Label at '$ResourceId'." | Out-Null
+    return $Label
+}
+
 function Test-VirtualMachine {
     param(
         [Parameter(Mandatory)][string]$SubscriptionId,
@@ -212,6 +243,7 @@ try {
     $targetResourceGroupName = ($targetResourceGroupId -split '/')[-1]
     $discoveryVmName = [string](Get-DeploymentOutputValue -Deployment $deployment -Name 'discoveryApplianceName')
     $replicationVmName = [string](Get-DeploymentOutputValue -Deployment $deployment -Name 'replicationApplianceName')
+    $hyperVHostName = [string](Get-DeploymentOutputValue -Deployment $deployment -Name 'hyperVHostName')
     $windowsSourceName = [string](Get-DeploymentOutputValue -Deployment $deployment -Name 'windowsSourceName')
     $linuxSourceName = [string](Get-DeploymentOutputValue -Deployment $deployment -Name 'linuxSourceName')
     $testSubnetId = [string](Get-DeploymentOutputValue -Deployment $deployment -Name 'targetTestSubnetId')
@@ -230,17 +262,16 @@ try {
         Test-ResourceExists -SubscriptionId $targetSubscriptionId -ResourceId $targetResourceGroupId -Label $targetResourceGroupName
     }
     Invoke-ValidationCheck -Name 'Target test subnet' -Action {
-        Test-ResourceExists -SubscriptionId $targetSubscriptionId -ResourceId $testSubnetId -Label 'target test subnet'
+        Test-SubnetExists -SubscriptionId $targetSubscriptionId -ResourceId $testSubnetId -Label 'target test subnet'
     }
     Invoke-ValidationCheck -Name 'Target final subnet' -Action {
-        Test-ResourceExists -SubscriptionId $targetSubscriptionId -ResourceId $finalSubnetId -Label 'target final subnet'
+        Test-SubnetExists -SubscriptionId $targetSubscriptionId -ResourceId $finalSubnetId -Label 'target final subnet'
     }
 
     foreach ($vmExpectation in @(
         [pscustomobject]@{ Name = $discoveryVmName; MinimumDataDisks = 0 }
         [pscustomobject]@{ Name = $replicationVmName; MinimumDataDisks = 1 }
-        [pscustomobject]@{ Name = $windowsSourceName; MinimumDataDisks = 1 }
-        [pscustomobject]@{ Name = $linuxSourceName; MinimumDataDisks = 1 }
+        [pscustomobject]@{ Name = $hyperVHostName; MinimumDataDisks = 1 }
     )) {
         Invoke-ValidationCheck -Name "VM $($vmExpectation.Name)" -Action {
             Test-VirtualMachine `
@@ -281,7 +312,19 @@ try {
 $registryPresent = Test-Path -LiteralPath 'HKLM:\SOFTWARE\Microsoft\AzureAppliance'
 $iisRunning = (Get-Service -Name W3SVC -ErrorAction SilentlyContinue).Status -eq 'Running'
 $portListening = $null -ne (Get-NetTCPConnection -State Listen -LocalPort 44368 -ErrorAction SilentlyContinue | Select-Object -First 1)
-$result = [ordered]@{ RegistryPresent = $registryPresent; IisRunning = $iisRunning; ConfigurationPortListening = $portListening }
+function Test-TcpEndpoint([string]$Address, [int]$Port) {
+    $client = [Net.Sockets.TcpClient]::new()
+    try { $task = $client.ConnectAsync($Address, $Port); return $task.Wait(5000) -and $client.Connected }
+    catch { return $false }
+    finally { $client.Dispose() }
+}
+$result = [ordered]@{
+    RegistryPresent = $registryPresent
+    IisRunning = $iisRunning
+    ConfigurationPortListening = $portListening
+    WindowsWinRm = Test-TcpEndpoint '10.10.3.10' 5985
+    LinuxSsh = Test-TcpEndpoint '10.10.3.20' 22
+}
 Write-Output "AZURE_MIGRATE_DISCOVERY_HEALTH=$($result | ConvertTo-Json -Compress)"
 '@
         Invoke-ValidationCheck -Name 'Discovery appliance health' -Action {
@@ -292,10 +335,16 @@ Write-Output "AZURE_MIGRATE_DISCOVERY_HEALTH=$($result | ConvertTo-Json -Compres
                 -CommandId 'RunPowerShellScript' `
                 -ScriptText $discoveryProbe `
                 -ResultMarker 'AZURE_MIGRATE_DISCOVERY_HEALTH='
-            if (-not $result.RegistryPresent -or -not $result.IisRunning -or -not $result.ConfigurationPortListening) {
+            if (
+                -not $result.RegistryPresent -or
+                -not $result.IisRunning -or
+                -not $result.ConfigurationPortListening -or
+                -not $result.WindowsWinRm -or
+                -not $result.LinuxSsh
+            ) {
                 throw "Discovery health failed: $($result | ConvertTo-Json -Compress)."
             }
-            return 'registry, IIS, and TCP 44368 ready'
+            return 'registry, IIS, TCP 44368, Windows WinRM, and Linux SSH ready'
         }
 
         $replicationProbe = @'
@@ -320,66 +369,53 @@ Write-Output "AZURE_MIGRATE_REPLICATION_HEALTH=$($result | ConvertTo-Json -Compr
             return 'local registry, IIS, and TCP 44368 ready; Azure provider connected'
         }
 
-        $windowsWorkloadProbe = @'
-$dataVolume = Get-Volume -FileSystemLabel 'LabData' -ErrorAction SilentlyContinue | Select-Object -First 1
-$markerPath = if ($null -eq $dataVolume) { $null } else { "$($dataVolume.DriveLetter):\lab-data\migration-marker.txt" }
-$markerPresent = $null -ne $markerPath -and (Test-Path -LiteralPath $markerPath)
-$iisRunning = (Get-Service -Name W3SVC -ErrorAction SilentlyContinue).Status -eq 'Running'
-$result = [ordered]@{ MarkerPresent = $markerPresent; MarkerPath = $markerPath; IisRunning = $iisRunning }
-Write-Output "AZURE_MIGRATE_WINDOWS_WORKLOAD=$($result | ConvertTo-Json -Compress)"
+        $nestedGuestProbe = @'
+$statusPath = 'C:\AzureMigrateNested\status.json'
+$status = if (Test-Path -LiteralPath $statusPath) { Get-Content -LiteralPath $statusPath -Raw | ConvertFrom-Json } else { $null }
+$vms = @(Get-VM -Name 'source-win01','source-linux01' -ErrorAction SilentlyContinue)
+$switches = @(
+    Get-VMSwitch -ErrorAction SilentlyContinue |
+        Where-Object Name -in 'NestedRouted','NestedNat'
+)
+$adapters = @($vms | Get-VMNetworkAdapter | Select-Object VMName,Name,SwitchName,MacAddress)
+$routedInterface = Get-NetIPInterface -InterfaceAlias 'vEthernet (NestedRouted)' -AddressFamily IPv4 -ErrorAction SilentlyContinue
+function Test-TcpEndpoint([string]$Address, [int]$Port) {
+  $client = [Net.Sockets.TcpClient]::new()
+  try { $task = $client.ConnectAsync($Address, $Port); return $task.Wait(3000) -and $client.Connected }
+  catch { return $false }
+  finally { $client.Dispose() }
+}
+function Get-WebContent([string]$Address) {
+  try { return (Invoke-WebRequest -Uri "http://$Address" -UseBasicParsing -TimeoutSec 10).Content }
+  catch { return '' }
+}
+$result = [ordered]@{
+  StatusReady = $null -ne $status -and $status.state -eq 'Ready'
+  WindowsRunning = $null -ne ($vms | Where-Object { $_.Name -eq 'source-win01' -and $_.State -eq 'Running' })
+  LinuxRunning = $null -ne ($vms | Where-Object { $_.Name -eq 'source-linux01' -and $_.State -eq 'Running' })
+    InternalSwitchesReady = @($switches | Where-Object {
+        [string]$_.SwitchType -eq 'Internal' -or [int]$_.SwitchType -eq 1
+    }).Count -eq 2
+  RoutedForwardingEnabled = $null -ne $routedInterface -and [string]$routedInterface.Forwarding -eq 'Enabled'
+  EachGuestHasTwoNics = @($adapters | Group-Object VMName | Where-Object Count -eq 2).Count -eq 2
+  WindowsWeb = (Get-WebContent '10.10.3.10') -match 'Nested Windows source workload'
+  LinuxWeb = (Get-WebContent '10.10.3.20') -match 'Nested Linux source workload'
+}
+Write-Output "AZURE_MIGRATE_NESTED_GUESTS=$($result | ConvertTo-Json -Compress)"
 '@
-        Invoke-ValidationCheck -Name 'Windows source workload' -Action {
+        Invoke-ValidationCheck -Name 'Nested physical source workloads' -Action {
             $result = Invoke-GuestProbe `
                 -SubscriptionId $sourceSubscriptionId `
                 -ResourceGroupName $sourceResourceGroupName `
-                -VirtualMachineName $windowsSourceName `
+                -VirtualMachineName $hyperVHostName `
                 -CommandId 'RunPowerShellScript' `
-                -ScriptText $windowsWorkloadProbe `
-                -ResultMarker 'AZURE_MIGRATE_WINDOWS_WORKLOAD='
-            if (-not $result.MarkerPresent -or -not $result.IisRunning) {
-                throw "Windows workload failed: $($result | ConvertTo-Json -Compress)."
+                -ScriptText $nestedGuestProbe `
+                -ResultMarker 'AZURE_MIGRATE_NESTED_GUESTS='
+            $failedProperties = @($result.PSObject.Properties | Where-Object { -not [bool]$_.Value } | ForEach-Object Name)
+            if ($failedProperties.Count -gt 0) {
+                throw "Nested guest validation failed: $($failedProperties -join ', ')."
             }
-            return 'IIS and migration marker ready'
-        }
-
-        $linuxWorkloadProbe = @'
-marker_present=false
-nginx_running=false
-expected_kernel='6.8.0-1041-azure'
-current_kernel=$(uname -r)
-password_auth=$(sshd -T 2>/dev/null | awk '$1 == "passwordauthentication" { print $2 }')
-root_login=$(sshd -T 2>/dev/null | awk '$1 == "permitrootlogin" { print $2 }')
-root_password_set=false
-if [ "$(passwd -S root 2>/dev/null | awk '{ print $2 }')" = 'P' ]; then root_password_set=true; fi
-sftp_enabled=false
-if sshd -T 2>/dev/null | grep -q '^subsystem sftp '; then sftp_enabled=true; fi
-host_mapping=false
-if awk '$1 == "10.10.2.20" { for (i = 2; i <= NF; i++) if ($i == "source-linux01") found = 1 } END { exit found ? 0 : 1 }' /etc/hosts; then host_mapping=true; fi
-if [ -f /data/lab-data/migration-marker.txt ]; then marker_present=true; fi
-if systemctl is-active --quiet nginx; then nginx_running=true; fi
-printf 'AZURE_MIGRATE_LINUX_WORKLOAD={"MarkerPresent":%s,"NginxRunning":%s,"CurrentKernel":"%s","ExpectedKernel":"%s","PasswordAuthentication":"%s","PermitRootLogin":"%s","RootPasswordSet":%s,"SftpEnabled":%s,"HostMappingPresent":%s}\n' "$marker_present" "$nginx_running" "$current_kernel" "$expected_kernel" "$password_auth" "$root_login" "$root_password_set" "$sftp_enabled" "$host_mapping"
-'@
-        Invoke-ValidationCheck -Name 'Linux source workload' -Action {
-            $result = Invoke-GuestProbe `
-                -SubscriptionId $sourceSubscriptionId `
-                -ResourceGroupName $sourceResourceGroupName `
-                -VirtualMachineName $linuxSourceName `
-                -CommandId 'RunShellScript' `
-                -ScriptText $linuxWorkloadProbe `
-                -ResultMarker 'AZURE_MIGRATE_LINUX_WORKLOAD='
-            if (
-                -not $result.MarkerPresent -or
-                -not $result.NginxRunning -or
-                $result.CurrentKernel -ne $result.ExpectedKernel -or
-                $result.PasswordAuthentication -ne 'yes' -or
-                $result.PermitRootLogin -ne 'yes' -or
-                -not $result.RootPasswordSet -or
-                -not $result.SftpEnabled -or
-                -not $result.HostMappingPresent
-            ) {
-                throw "Linux workload failed: $($result | ConvertTo-Json -Compress)."
-            }
-            return "Nginx, marker, and Mobility prerequisites ready on kernel $($result.CurrentKernel)"
+            return "$windowsSourceName and $linuxSourceName running with routed management and web workloads"
         }
     }
 

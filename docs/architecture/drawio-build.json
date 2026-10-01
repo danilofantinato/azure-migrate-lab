@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "workspaceRoot": "../..",
+  "output": "azure-migrate-lab.drawio",
+  "manifest": "icon-manifest.json",
+  "summary": "build-summary.json",
+  "diagnostics": "build-diagnostics.json",
+  "profile": "production",
+  "network": "offline",
+  "guide": {
+    "path": "../../README.md",
+    "manageMetadata": true
+  }
+}

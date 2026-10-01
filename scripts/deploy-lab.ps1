@@ -3,14 +3,13 @@ param(
     [string]$SourceSubscriptionId,
     [string]$TargetSubscriptionId,
     [string]$AdminSourceCidr,
-    [string]$SshPublicKeyPath,
-    [switch]$CreateSshKey,
     [string]$SourceLocation,
     [string]$TargetLocation,
     [string]$NamePrefix,
     [string]$AdminUsername,
     [string]$DiscoveryApplianceVmSize,
     [string]$ReplicationApplianceVmSize,
+    [string]$HyperVHostVmSize,
     [string]$WindowsSourceVmSize,
     [string]$LinuxSourceVmSize,
     [bool]$AutoSelectVmSizes = $true,
@@ -32,10 +31,6 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $templateFile = Join-Path $repositoryRoot 'infra\main.bicep'
 $parameterFile = Join-Path $repositoryRoot 'infra\main.bicepparam'
-$labSshDirectory = Join-Path $repositoryRoot 'ssh'
-$powerShellPath = (Get-Command pwsh -ErrorAction Stop).Source
-$labSshPrivateKeyPath = Join-Path $labSshDirectory 'azure-migrate-lab'
-$labSshPublicKeyPath = "$labSshPrivateKeyPath.pub"
 $configFilePath = if ([string]::IsNullOrWhiteSpace($ConfigFile)) {
     Join-Path $PSScriptRoot 'deploy-lab.local.json'
 }
@@ -49,13 +44,13 @@ $cacheableParameterNames = @(
     'SourceSubscriptionId'
     'TargetSubscriptionId'
     'AdminSourceCidr'
-    'SshPublicKeyPath'
     'SourceLocation'
     'TargetLocation'
     'NamePrefix'
     'AdminUsername'
     'DiscoveryApplianceVmSize'
     'ReplicationApplianceVmSize'
+    'HyperVHostVmSize'
     'WindowsSourceVmSize'
     'LinuxSourceVmSize'
     'AutoShutdownEnabled'
@@ -83,6 +78,7 @@ $fallbackComputeProfiles = @(
         Name = 'Dasv7'
         DiscoveryApplianceVmSize = 'Standard_D8as_v7'
         ReplicationApplianceVmSize = 'Standard_D16as_v7'
+        HyperVHostVmSize = 'Standard_D16as_v7'
         WindowsSourceVmSize = 'Standard_D2as_v7'
         LinuxSourceVmSize = 'Standard_D2as_v7'
     }
@@ -90,6 +86,7 @@ $fallbackComputeProfiles = @(
         Name = 'Dasv6'
         DiscoveryApplianceVmSize = 'Standard_D8as_v6'
         ReplicationApplianceVmSize = 'Standard_D16as_v6'
+        HyperVHostVmSize = 'Standard_D16s_v6'
         WindowsSourceVmSize = 'Standard_D2as_v6'
         LinuxSourceVmSize = 'Standard_D2as_v6'
     }
@@ -97,6 +94,7 @@ $fallbackComputeProfiles = @(
         Name = 'Dasv5'
         DiscoveryApplianceVmSize = 'Standard_D8as_v5'
         ReplicationApplianceVmSize = 'Standard_D16as_v5'
+        HyperVHostVmSize = 'Standard_D16s_v5'
         WindowsSourceVmSize = 'Standard_D2as_v5'
         LinuxSourceVmSize = 'Standard_D2as_v5'
     }
@@ -147,7 +145,6 @@ function New-AzureWindowsAdminPassword {
         'ABCDEFGHJKLMNPQRSTUVWXYZ'
         'abcdefghijkmnopqrstuvwxyz'
         '23456789'
-        '!@#$%^&*_-+='
     )
     $characters = [Collections.Generic.List[char]]::new()
     foreach ($characterSet in $characterSets) {
@@ -261,19 +258,6 @@ function Read-BoolWithDefault {
     }
 }
 
-function Read-SshKeyChoice {
-    while ($true) {
-        $choice = (Read-Host 'SSH key: [C]reate/reuse lab key or [U]se existing key [C]').Trim()
-        if ([string]::IsNullOrWhiteSpace($choice) -or $choice -match '^(?i:c|create)$') {
-            return 'Create'
-        }
-        if ($choice -match '^(?i:u|use|existing)$') {
-            return 'Existing'
-        }
-        Write-Warning 'Enter C or U.'
-    }
-}
-
 function Assert-SubscriptionId {
     param(
         [Parameter(Mandatory)][string]$Value,
@@ -365,6 +349,74 @@ function Ensure-AzureProviderRegistered {
     Write-DeploymentDetail "$EnvironmentLabel provider ${Namespace}: Registered." Green
 }
 
+function Ensure-AzureFeatureRegistered {
+    param(
+        [Parameter(Mandatory)][string]$SubscriptionId,
+        [Parameter(Mandatory)][string]$Namespace,
+        [Parameter(Mandatory)][string]$FeatureName,
+        [Parameter(Mandatory)][string]$EnvironmentLabel,
+        [ValidateRange(1, 120)][int]$MaximumAttempts = 60
+    )
+
+    $registrationState = & az feature show `
+        --subscription $SubscriptionId `
+        --namespace $Namespace `
+        --name $FeatureName `
+        --query properties.state `
+        --output tsv `
+        --only-show-errors
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not read feature state for $Namespace/$FeatureName in the $EnvironmentLabel subscription."
+    }
+
+    if ($registrationState -notin @('Registered', 'Registering', 'Pending')) {
+        Write-DeploymentDetail "$EnvironmentLabel feature $Namespace/${FeatureName}: $registrationState; registering." Yellow
+        Invoke-AzureCli @(
+            'feature', 'register',
+            '--subscription', $SubscriptionId,
+            '--namespace', $Namespace,
+            '--name', $FeatureName,
+            '--only-show-errors'
+        ) "Failed to register feature $Namespace/$FeatureName in the $EnvironmentLabel subscription."
+        $registrationState = 'Registering'
+    }
+
+    foreach ($attempt in 1..$MaximumAttempts) {
+        if ($registrationState -eq 'Registered') {
+            break
+        }
+        if ($registrationState -eq 'Pending') {
+            throw "Feature $Namespace/$FeatureName requires Microsoft approval in the $EnvironmentLabel subscription. Open an Azure support request, then resume setup after the feature reaches Registered."
+        }
+        if ($attempt -lt $MaximumAttempts) {
+            Write-DeploymentDetail "$EnvironmentLabel feature $Namespace/${FeatureName}: $registrationState; waiting." Yellow
+            Start-Sleep -Seconds 10
+        }
+        $registrationState = & az feature show `
+            --subscription $SubscriptionId `
+            --namespace $Namespace `
+            --name $FeatureName `
+            --query properties.state `
+            --output tsv `
+            --only-show-errors
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not refresh feature state for $Namespace/$FeatureName in the $EnvironmentLabel subscription."
+        }
+    }
+    if ($registrationState -ne 'Registered') {
+        throw "Feature $Namespace/$FeatureName did not reach Registered state in the $EnvironmentLabel subscription. Current state: $registrationState"
+    }
+
+    Invoke-AzureCli @(
+        'provider', 'register',
+        '--subscription', $SubscriptionId,
+        '--namespace', $Namespace,
+        '--wait',
+        '--only-show-errors'
+    ) "Failed to propagate feature $Namespace/$FeatureName through provider $Namespace in the $EnvironmentLabel subscription."
+    Write-DeploymentDetail "$EnvironmentLabel feature $Namespace/${FeatureName}: Registered and propagated." Green
+}
+
 function Import-LocalConfiguration {
     param([Parameter(Mandatory)][string]$Path)
 
@@ -393,13 +445,13 @@ function Get-CurrentConfiguration {
         SourceSubscriptionId = $SourceSubscriptionId
         TargetSubscriptionId = $TargetSubscriptionId
         AdminSourceCidr = $AdminSourceCidr
-        SshPublicKeyPath = $SshPublicKeyPath
         SourceLocation = $SourceLocation
         TargetLocation = $TargetLocation
         NamePrefix = $NamePrefix
         AdminUsername = $AdminUsername
         DiscoveryApplianceVmSize = $DiscoveryApplianceVmSize
         ReplicationApplianceVmSize = $ReplicationApplianceVmSize
+        HyperVHostVmSize = $HyperVHostVmSize
         WindowsSourceVmSize = $WindowsSourceVmSize
         LinuxSourceVmSize = $LinuxSourceVmSize
         AutoShutdownEnabled = [bool]$AutoShutdownEnabled
@@ -420,7 +472,6 @@ function Edit-CurrentConfiguration {
     $script:SourceSubscriptionId = Read-ValueWithDefault 'Source subscription ID' $SourceSubscriptionId
     $script:TargetSubscriptionId = Read-ValueWithDefault 'Target subscription ID' $TargetSubscriptionId
     $script:AdminSourceCidr = Read-ValueWithDefault 'Administrator public IPv4 CIDR' $AdminSourceCidr
-    $script:SshPublicKeyPath = Read-ValueWithDefault 'SSH public key path' $SshPublicKeyPath
     $script:SourceLocation = Read-ValueWithDefault 'Simulated source Azure region' $SourceLocation
     $script:TargetLocation = Read-ValueWithDefault 'Migration target and Azure Migrate region' $TargetLocation
     $script:NamePrefix = Read-ValueWithDefault 'Resource name prefix' $NamePrefix
@@ -428,8 +479,9 @@ function Edit-CurrentConfiguration {
     $script:vmSizesSelectedInteractively = $true
     $script:DiscoveryApplianceVmSize = Read-ValueWithDefault 'Discovery appliance VM size' $DiscoveryApplianceVmSize
     $script:ReplicationApplianceVmSize = Read-ValueWithDefault 'Replication appliance VM size' $ReplicationApplianceVmSize
-    $script:WindowsSourceVmSize = Read-ValueWithDefault 'Windows source VM size' $WindowsSourceVmSize
-    $script:LinuxSourceVmSize = Read-ValueWithDefault 'Linux source VM size' $LinuxSourceVmSize
+    $script:HyperVHostVmSize = Read-ValueWithDefault 'Nested Hyper-V host VM size' $HyperVHostVmSize
+    $script:WindowsSourceVmSize = Read-ValueWithDefault 'Expected migrated Windows target VM size' $WindowsSourceVmSize
+    $script:LinuxSourceVmSize = Read-ValueWithDefault 'Expected migrated Linux target VM size' $LinuxSourceVmSize
     $script:AutoShutdownEnabled = Read-BoolWithDefault 'Enable automatic VM shutdown' ([bool]$AutoShutdownEnabled)
     $script:AutoShutdownTime = Read-ValueWithDefault 'Automatic shutdown time in HHmm format' $AutoShutdownTime
     $script:AutoShutdownTimeZone = Read-ValueWithDefault 'Automatic shutdown time zone' $AutoShutdownTimeZone
@@ -533,6 +585,21 @@ function Get-VmSkuCapabilityValue {
     return $valueProperty.Value
 }
 
+function Test-VmSkuSupportsNestedVirtualization {
+    param(
+        [Parameter(Mandatory)][string]$SkuName,
+        [AllowNull()][string]$CapabilityValue
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($CapabilityValue)) {
+        return $CapabilityValue -match '^(?i:true)$'
+    }
+
+    return $SkuName -match '^Standard_D\d+as_v7$' -or
+        $SkuName -match '^Standard_D\d+s_v6$' -or
+        $SkuName -match '^Standard_D\d+s_v5$'
+}
+
 function Get-ComputeOptionAssessment {
     param(
         [Parameter(Mandatory)][string]$SubscriptionId,
@@ -590,6 +657,7 @@ function Get-ComputeOptionAssessment {
         $physicalCores = [int]($cores / $vCpusPerCore)
         $cpuArchitecture = Get-VmSkuCapabilityValue -Sku $sku -Name 'CpuArchitectureType'
         $hyperVGenerations = Get-VmSkuCapabilityValue -Sku $sku -Name 'HyperVGenerations'
+        $nestedVirtualization = Get-VmSkuCapabilityValue -Sku $sku -Name 'NestedVirtualization'
         if ($cores -lt [int]$request.MinimumCores -or $memoryGb -lt [decimal]$request.MinimumMemoryGb) {
             $issues.Add("$($request.Role): $($request.Size) provides $cores vCPUs/$memoryGb GB; requires at least $($request.MinimumCores) vCPUs/$($request.MinimumMemoryGb) GB")
             continue
@@ -608,6 +676,17 @@ function Get-ComputeOptionAssessment {
             $issues.Add("$($request.Role): $($request.Size) does not advertise Hyper-V generation V2 support")
             continue
         }
+        $nestedVirtualizationProperty = $request.PSObject.Properties['RequiresNestedVirtualization']
+        if (
+            $null -ne $nestedVirtualizationProperty -and
+            [bool]$nestedVirtualizationProperty.Value -and
+            -not (Test-VmSkuSupportsNestedVirtualization `
+                -SkuName ([string]$sku.name) `
+                -CapabilityValue $nestedVirtualization)
+        ) {
+            $issues.Add("$($request.Role): $($request.Size) is not in a documented nested-virtualization series")
+            continue
+        }
 
         $resolvedVirtualMachines.Add([pscustomobject]@{
             Role = $request.Role
@@ -617,6 +696,7 @@ function Get-ComputeOptionAssessment {
             VCpusPerCore = $vCpusPerCore
             MemoryGb = $memoryGb
             Family = $sku.family
+            NestedVirtualization = $nestedVirtualization
         })
         Write-DeploymentDetail "$($request.Role): $($sku.name), $physicalCores physical cores/$cores vCPUs, $memoryGb GB RAM, family $($sku.family), unrestricted." Green
     }
@@ -696,15 +776,13 @@ function New-RequestedVirtualMachineSet {
     param(
         [Parameter(Mandatory)][string]$DiscoverySize,
         [Parameter(Mandatory)][string]$ReplicationSize,
-        [Parameter(Mandatory)][string]$WindowsSourceSize,
-        [Parameter(Mandatory)][string]$LinuxSourceSize
+        [Parameter(Mandatory)][string]$HyperVHostSize
     )
 
     return @(
         [pscustomobject]@{ Role = 'discovery appliance'; Size = $DiscoverySize; MinimumCores = 8; MinimumMemoryGb = 32 }
         [pscustomobject]@{ Role = 'replication appliance'; Size = $ReplicationSize; MinimumCores = 8; MinimumPhysicalCores = 8; MinimumMemoryGb = 16 }
-        [pscustomobject]@{ Role = 'Windows source'; Size = $WindowsSourceSize; MinimumCores = 2; MinimumMemoryGb = 8 }
-        [pscustomobject]@{ Role = 'Linux source'; Size = $LinuxSourceSize; MinimumCores = 2; MinimumMemoryGb = 4 }
+        [pscustomobject]@{ Role = 'nested Hyper-V host'; Size = $HyperVHostSize; MinimumCores = 16; MinimumMemoryGb = 64; RequiresNestedVirtualization = $true }
     )
 }
 
@@ -736,6 +814,7 @@ function Resolve-RegionalDefaultComputeProfile {
         $profileSignature = @(
             $profile.DiscoveryApplianceVmSize
             $profile.ReplicationApplianceVmSize
+            $profile.HyperVHostVmSize
             $profile.WindowsSourceVmSize
             $profile.LinuxSourceVmSize
         ) -join '|'
@@ -745,8 +824,7 @@ function Resolve-RegionalDefaultComputeProfile {
         $sourceRequests = New-RequestedVirtualMachineSet `
             -DiscoverySize $profile.DiscoveryApplianceVmSize `
             -ReplicationSize $profile.ReplicationApplianceVmSize `
-            -WindowsSourceSize $profile.WindowsSourceVmSize `
-            -LinuxSourceSize $profile.LinuxSourceVmSize
+            -HyperVHostSize $profile.HyperVHostVmSize
         $targetRequests = New-TargetVirtualMachineSet `
             -WindowsSourceSize $profile.WindowsSourceVmSize `
             -LinuxSourceSize $profile.LinuxSourceVmSize
@@ -762,14 +840,14 @@ function Resolve-RegionalDefaultComputeProfile {
         if ($sourceAssessment.Eligible -and $targetAssessment.Eligible) {
             $script:DiscoveryApplianceVmSize = $profile.DiscoveryApplianceVmSize
             $script:ReplicationApplianceVmSize = $profile.ReplicationApplianceVmSize
+            $script:HyperVHostVmSize = $profile.HyperVHostVmSize
             $script:WindowsSourceVmSize = $profile.WindowsSourceVmSize
             $script:LinuxSourceVmSize = $profile.LinuxSourceVmSize
             $env:AZURE_MIGRATE_LAB_DISCOVERY_VM_SIZE = $script:DiscoveryApplianceVmSize
             $env:AZURE_MIGRATE_LAB_REPLICATION_VM_SIZE = $script:ReplicationApplianceVmSize
-            $env:AZURE_MIGRATE_LAB_WINDOWS_SOURCE_VM_SIZE = $script:WindowsSourceVmSize
-            $env:AZURE_MIGRATE_LAB_LINUX_SOURCE_VM_SIZE = $script:LinuxSourceVmSize
+            $env:AZURE_MIGRATE_LAB_HYPERV_HOST_VM_SIZE = $script:HyperVHostVmSize
             Save-LocalConfiguration -Path $ConfigurationPath -Configuration (Get-CurrentConfiguration)
-            Write-DeploymentDetail "Selected $($profile.Name): $($profile.DiscoveryApplianceVmSize), $($profile.ReplicationApplianceVmSize), $($profile.WindowsSourceVmSize), $($profile.LinuxSourceVmSize)." Green
+            Write-DeploymentDetail "Selected $($profile.Name): discovery $($profile.DiscoveryApplianceVmSize), replication $($profile.ReplicationApplianceVmSize), Hyper-V $($profile.HyperVHostVmSize), target assumptions $($profile.WindowsSourceVmSize)/$($profile.LinuxSourceVmSize)." Green
             return
         }
 
@@ -905,8 +983,7 @@ function Find-RecommendedComputeOptions {
                 $profileVirtualMachines = New-RequestedVirtualMachineSet `
                     -DiscoverySize $profile.DiscoveryApplianceVmSize `
                     -ReplicationSize $profile.ReplicationApplianceVmSize `
-                    -WindowsSourceSize $profile.WindowsSourceVmSize `
-                    -LinuxSourceSize $profile.LinuxSourceVmSize
+                    -HyperVHostSize $profile.HyperVHostVmSize
                 foreach ($candidateRegion in $profileRegions) {
                     try {
                         $assessment = Get-ComputeOptionAssessment `
@@ -984,8 +1061,7 @@ function Get-ArmValidatedComputeOptions {
         SourceLocation = $env:AZURE_MIGRATE_LAB_SOURCE_LOCATION
         Discovery = $env:AZURE_MIGRATE_LAB_DISCOVERY_VM_SIZE
         Replication = $env:AZURE_MIGRATE_LAB_REPLICATION_VM_SIZE
-        WindowsSource = $env:AZURE_MIGRATE_LAB_WINDOWS_SOURCE_VM_SIZE
-        LinuxSource = $env:AZURE_MIGRATE_LAB_LINUX_SOURCE_VM_SIZE
+        HyperVHost = $env:AZURE_MIGRATE_LAB_HYPERV_HOST_VM_SIZE
     }
     try {
         foreach ($recommendation in $Recommendations) {
@@ -996,8 +1072,7 @@ function Get-ArmValidatedComputeOptions {
             $env:AZURE_MIGRATE_LAB_SOURCE_LOCATION = $recommendation.Region
             $env:AZURE_MIGRATE_LAB_DISCOVERY_VM_SIZE = $sizes[0].Size
             $env:AZURE_MIGRATE_LAB_REPLICATION_VM_SIZE = $sizes[1].Size
-            $env:AZURE_MIGRATE_LAB_WINDOWS_SOURCE_VM_SIZE = $sizes[2].Size
-            $env:AZURE_MIGRATE_LAB_LINUX_SOURCE_VM_SIZE = $sizes[3].Size
+            $env:AZURE_MIGRATE_LAB_HYPERV_HOST_VM_SIZE = $sizes[2].Size
 
             & az deployment sub validate `
                 --subscription $TargetSubscriptionId `
@@ -1033,8 +1108,7 @@ function Get-ArmValidatedComputeOptions {
         $env:AZURE_MIGRATE_LAB_SOURCE_LOCATION = $originalEnvironment.SourceLocation
         $env:AZURE_MIGRATE_LAB_DISCOVERY_VM_SIZE = $originalEnvironment.Discovery
         $env:AZURE_MIGRATE_LAB_REPLICATION_VM_SIZE = $originalEnvironment.Replication
-        $env:AZURE_MIGRATE_LAB_WINDOWS_SOURCE_VM_SIZE = $originalEnvironment.WindowsSource
-        $env:AZURE_MIGRATE_LAB_LINUX_SOURCE_VM_SIZE = $originalEnvironment.LinuxSource
+        $env:AZURE_MIGRATE_LAB_HYPERV_HOST_VM_SIZE = $originalEnvironment.HyperVHost
     }
 
     return @($validatedOptions)
@@ -1083,13 +1157,11 @@ function Set-ComputeOption {
     $script:SourceLocation = $Option.Region
     $script:DiscoveryApplianceVmSize = $sizes[0].Size
     $script:ReplicationApplianceVmSize = $sizes[1].Size
-    $script:WindowsSourceVmSize = $sizes[2].Size
-    $script:LinuxSourceVmSize = $sizes[3].Size
+    $script:HyperVHostVmSize = $sizes[2].Size
     $env:AZURE_MIGRATE_LAB_SOURCE_LOCATION = $script:SourceLocation
     $env:AZURE_MIGRATE_LAB_DISCOVERY_VM_SIZE = $script:DiscoveryApplianceVmSize
     $env:AZURE_MIGRATE_LAB_REPLICATION_VM_SIZE = $script:ReplicationApplianceVmSize
-    $env:AZURE_MIGRATE_LAB_WINDOWS_SOURCE_VM_SIZE = $script:WindowsSourceVmSize
-    $env:AZURE_MIGRATE_LAB_LINUX_SOURCE_VM_SIZE = $script:LinuxSourceVmSize
+    $env:AZURE_MIGRATE_LAB_HYPERV_HOST_VM_SIZE = $script:HyperVHostVmSize
     Save-LocalConfiguration -Path $ConfigurationPath -Configuration (Get-CurrentConfiguration)
     Show-CurrentConfiguration
 }
@@ -1155,6 +1227,8 @@ function Get-AzureDeploymentFailure {
                 }
                 $errorProperty = $Node.PSObject.Properties['error']
                 if ($null -ne $errorProperty) { Add-ErrorNode -Node $errorProperty.Value }
+                $propertiesProperty = $Node.PSObject.Properties['properties']
+                if ($null -ne $propertiesProperty) { Add-ErrorNode -Node $propertiesProperty.Value }
                 $detailsProperty = $Node.PSObject.Properties['details']
                 if ($null -ne $detailsProperty) {
                     foreach ($child in @($detailsProperty.Value)) { Add-ErrorNode -Node $child }
@@ -1287,6 +1361,67 @@ function Show-AzureDeploymentOperations {
     }
 }
 
+function Wait-AzureSubscriptionDeployment {
+    param(
+        [Parameter(Mandatory)][string]$SubscriptionId,
+        [Parameter(Mandatory)][string]$DeploymentName,
+        [ValidateRange(5, 300)][int]$PollIntervalSeconds = 30
+    )
+
+    $reportedOperationStates = @{}
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        $deployment = Get-AzureCliJson @(
+            'deployment', 'sub', 'show',
+            '--subscription', $SubscriptionId,
+            '--name', $DeploymentName,
+            '--output', 'json',
+            '--only-show-errors'
+        ) "Could not read deployment '$DeploymentName' while waiting for ARM."
+        $state = [string]$deployment.properties.provisioningState
+        $operations = @(Get-AzureCliJson @(
+            'deployment', 'operation', 'sub', 'list',
+            '--subscription', $SubscriptionId,
+            '--name', $DeploymentName,
+            '--output', 'json',
+            '--only-show-errors'
+        ) "Could not list operations for deployment '$DeploymentName' while waiting for ARM.")
+
+        foreach ($operation in $operations | Sort-Object { $_.properties.timestamp }) {
+            $properties = $operation.properties
+            $target = $properties.targetResource
+            $resourceLabel = if ($null -eq $target) {
+                $operation.id
+            }
+            else {
+                "$($target.resourceType)/$($target.resourceName)"
+            }
+            $operationState = [string]$properties.provisioningState
+            $operationKey = [string]$operation.id
+            if ($reportedOperationStates[$operationKey] -ne $operationState) {
+                $color = if ($operationState -eq 'Succeeded') {
+                    [ConsoleColor]::Green
+                }
+                elseif ($operationState -eq 'Failed') {
+                    [ConsoleColor]::Red
+                }
+                else {
+                    [ConsoleColor]::Yellow
+                }
+                Write-DeploymentDetail "$operationState - $resourceLabel" $color
+                $reportedOperationStates[$operationKey] = $operationState
+            }
+        }
+
+        $elapsed = $watch.Elapsed.ToString('hh\:mm\:ss')
+        Write-DeploymentDetail "ARM deployment state: $state (elapsed $elapsed)."
+        if ($state -in @('Succeeded', 'Failed', 'Canceled')) {
+            return $deployment
+        }
+        Start-Sleep -Seconds $PollIntervalSeconds
+    }
+}
+
 function Get-ExistingLabWindowsVirtualMachines {
     param(
         [Parameter(Mandatory)][string]$SubscriptionId,
@@ -1350,6 +1485,50 @@ function Get-ExistingLabTargetResourceGroups {
         '--output', 'json',
         '--only-show-errors'
     ) 'Could not inspect existing target resource groups before incremental deployment.')
+}
+
+function Remove-LabJitNetworkAccessPolicy {
+    param(
+        [Parameter(Mandatory)][string]$SubscriptionId,
+        [Parameter(Mandatory)][string]$ResourceGroupName,
+        [Parameter(Mandatory)][string]$Location,
+        [Parameter(Mandatory)][string]$Prefix
+    )
+
+    $policyUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Security/locations/$Location/jitNetworkAccessPolicies/default?api-version=2020-01-01"
+    $output = @(& az rest --method get --url $policyUrl --only-show-errors --output json 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        $details = ($output | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine
+        if ($details -match '(?i)ResourceNotFound|NotFound|404') {
+            return
+        }
+        throw "Could not inspect Defender JIT policy in '$ResourceGroupName'.$([Environment]::NewLine)$details"
+    }
+
+    $policy = ($output -join [Environment]::NewLine) | ConvertFrom-Json
+    $configuredVirtualMachines = @($policy.properties.virtualMachines)
+    $labVmNamePattern = '^vm-{0}-(disc|repl|hyperv)-' -f [regex]::Escape($Prefix)
+    $nonLabVirtualMachines = @(
+        $configuredVirtualMachines | Where-Object {
+            $vmName = ([string]$_.id).TrimEnd('/').Split('/')[-1]
+            $vmName -notmatch $labVmNamePattern
+        }
+    )
+    if ($nonLabVirtualMachines.Count -gt 0) {
+        $nonLabIds = $nonLabVirtualMachines | ForEach-Object { [string]$_.id }
+        throw "Defender JIT policy in '$ResourceGroupName' includes non-lab VMs; refusing to delete it: $($nonLabIds -join ', ')."
+    }
+    if ($configuredVirtualMachines.Count -eq 0) {
+        return
+    }
+
+    Write-DeploymentDetail "Removing Defender JIT policy for $($configuredVirtualMachines.Count) lab VM(s) in '$ResourceGroupName'; Bicep will restore CIDR-restricted management rules." Yellow
+    Invoke-AzureCli @(
+        'rest', '--method', 'delete',
+        '--url', $policyUrl,
+        '--only-show-errors',
+        '--output', 'none'
+    ) "Could not remove Defender JIT policy in '$ResourceGroupName'."
 }
 
 function Confirm-ExistingWindowsPasswordRotation {
@@ -1492,15 +1671,6 @@ if (-not $Reconfigure -and (Test-Path $configFilePath)) {
     $loadedSavedSettings = $true
 }
 
-if (
-    $explicitParameterNames -notcontains 'SshPublicKeyPath' -and
-    -not [string]::IsNullOrWhiteSpace($SshPublicKeyPath) -and
-    -not (Test-Path $SshPublicKeyPath)
-) {
-    Write-Warning "Cached SSH public key was not found: $SshPublicKeyPath. Choose another key."
-    $SshPublicKeyPath = $null
-}
-
 if ($loadedSavedSettings) {
     Show-CurrentConfiguration
     $savedConfigurationAction = Read-SavedConfigurationAction
@@ -1524,34 +1694,6 @@ if ([string]::IsNullOrWhiteSpace($TargetSubscriptionId)) {
 if ([string]::IsNullOrWhiteSpace($AdminSourceCidr)) {
     $AdminSourceCidr = Read-RequiredValue 'Your public IPv4 CIDR, for example 203.0.113.10/32'
 }
-if ([string]::IsNullOrWhiteSpace($SshPublicKeyPath)) {
-    $sshKeyChoice = if ($CreateSshKey) { 'Create' } else { Read-SshKeyChoice }
-    if ($sshKeyChoice -eq 'Create') {
-        if (-not (Test-Path $labSshPublicKeyPath)) {
-            if (Test-Path $labSshPrivateKeyPath) {
-                throw "The private key exists but its public key is missing: $labSshPrivateKeyPath"
-            }
-            if (-not (Get-Command ssh-keygen -ErrorAction SilentlyContinue)) {
-                throw 'ssh-keygen was not found. Install the Windows OpenSSH Client or provide -SshPublicKeyPath.'
-            }
-
-            New-Item -Path $labSshDirectory -ItemType Directory -Force | Out-Null
-            Write-Host "Creating SSH key: $labSshPrivateKeyPath" -ForegroundColor Cyan
-            Write-Host 'Enter an optional passphrase when prompted, or press Enter twice for no passphrase.'
-            & ssh-keygen -t ed25519 -f $labSshPrivateKeyPath -C 'azure-migrate-lab'
-            if ($LASTEXITCODE -ne 0) {
-                throw 'SSH key creation failed.'
-            }
-        }
-        else {
-            Write-Host "Reusing lab SSH key: $labSshPublicKeyPath"
-        }
-        $SshPublicKeyPath = $labSshPublicKeyPath
-    }
-    else {
-        $SshPublicKeyPath = Read-ValueWithDefault 'Existing SSH public key path' (Join-Path $HOME '.ssh\id_ed25519.pub')
-    }
-}
 if ([string]::IsNullOrWhiteSpace($SourceLocation)) {
     $SourceLocation = Read-ValueWithDefault 'Simulated source Azure region' 'eastus2'
 }
@@ -1570,11 +1712,14 @@ if ([string]::IsNullOrWhiteSpace($DiscoveryApplianceVmSize)) {
 if ([string]::IsNullOrWhiteSpace($ReplicationApplianceVmSize)) {
     $ReplicationApplianceVmSize = Read-ValueWithDefault 'Replication appliance VM size' 'Standard_D16as_v7'
 }
+if ([string]::IsNullOrWhiteSpace($HyperVHostVmSize)) {
+    $HyperVHostVmSize = Read-ValueWithDefault 'Nested Hyper-V host VM size' 'Standard_D16as_v7'
+}
 if ([string]::IsNullOrWhiteSpace($WindowsSourceVmSize)) {
-    $WindowsSourceVmSize = Read-ValueWithDefault 'Windows source VM size' 'Standard_D2as_v7'
+    $WindowsSourceVmSize = Read-ValueWithDefault 'Expected migrated Windows target VM size' 'Standard_D2as_v7'
 }
 if ([string]::IsNullOrWhiteSpace($LinuxSourceVmSize)) {
-    $LinuxSourceVmSize = Read-ValueWithDefault 'Linux source VM size' 'Standard_D2as_v7'
+    $LinuxSourceVmSize = Read-ValueWithDefault 'Expected migrated Linux target VM size' 'Standard_D2as_v7'
 }
 if ($null -eq $AutoShutdownEnabled) {
     $AutoShutdownEnabled = Read-BoolWithDefault 'Enable automatic VM shutdown' $true
@@ -1608,16 +1753,6 @@ if ($AdminUsername.Length -gt 15) {
 if ($AutoShutdownTime -notmatch '^(?:[01][0-9]|2[0-3])[0-5][0-9]$') {
     throw 'Automatic shutdown time must use 24-hour HHmm format, for example 1900.'
 }
-if (-not (Test-Path $SshPublicKeyPath)) {
-    throw "SSH public key not found: $SshPublicKeyPath. Create one with: ssh-keygen -t ed25519"
-}
-$SshPublicKeyPath = (Resolve-Path $SshPublicKeyPath).Path
-
-$sshPublicKey = (Get-Content $SshPublicKeyPath -Raw).Trim()
-if ($sshPublicKey -notmatch '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-)') {
-    throw "The file does not contain a recognized SSH public key: $SshPublicKeyPath"
-}
-
 $configurationToSave = Get-CurrentConfiguration
 Save-LocalConfiguration -Path $configFilePath -Configuration $configurationToSave
 
@@ -1627,7 +1762,6 @@ $labEnvironmentVariables = @(
     'AZURE_MIGRATE_LAB_SOURCE_SUBSCRIPTION_ID'
     'AZURE_MIGRATE_LAB_TARGET_SUBSCRIPTION_ID'
     'AZURE_MIGRATE_LAB_ADMIN_SOURCE_CIDR'
-    'AZURE_MIGRATE_LAB_SSH_PUBLIC_KEY'
     'AZURE_MIGRATE_LAB_ADMIN_PASSWORD'
     'AZURE_MIGRATE_LAB_SOURCE_LOCATION'
     'AZURE_MIGRATE_LAB_TARGET_LOCATION'
@@ -1635,8 +1769,8 @@ $labEnvironmentVariables = @(
     'AZURE_MIGRATE_LAB_ADMIN_USERNAME'
     'AZURE_MIGRATE_LAB_DISCOVERY_VM_SIZE'
     'AZURE_MIGRATE_LAB_REPLICATION_VM_SIZE'
-    'AZURE_MIGRATE_LAB_WINDOWS_SOURCE_VM_SIZE'
-    'AZURE_MIGRATE_LAB_LINUX_SOURCE_VM_SIZE'
+    'AZURE_MIGRATE_LAB_HYPERV_HOST_VM_SIZE'
+    'AZURE_MIGRATE_LAB_CONFIGURE_HYPERV_SECURITY_TYPE'
     'AZURE_MIGRATE_LAB_AUTO_SHUTDOWN_ENABLED'
     'AZURE_MIGRATE_LAB_AUTO_SHUTDOWN_TIME'
     'AZURE_MIGRATE_LAB_AUTO_SHUTDOWN_TIME_ZONE'
@@ -1653,7 +1787,6 @@ try {
     $env:AZURE_MIGRATE_LAB_SOURCE_SUBSCRIPTION_ID = $SourceSubscriptionId
     $env:AZURE_MIGRATE_LAB_TARGET_SUBSCRIPTION_ID = $TargetSubscriptionId
     $env:AZURE_MIGRATE_LAB_ADMIN_SOURCE_CIDR = $AdminSourceCidr
-    $env:AZURE_MIGRATE_LAB_SSH_PUBLIC_KEY = $sshPublicKey
     $env:AZURE_MIGRATE_LAB_ADMIN_PASSWORD = $temporaryPassword
     $env:AZURE_MIGRATE_LAB_SOURCE_LOCATION = $SourceLocation
     $env:AZURE_MIGRATE_LAB_TARGET_LOCATION = $TargetLocation
@@ -1661,8 +1794,7 @@ try {
     $env:AZURE_MIGRATE_LAB_ADMIN_USERNAME = $AdminUsername
     $env:AZURE_MIGRATE_LAB_DISCOVERY_VM_SIZE = $DiscoveryApplianceVmSize
     $env:AZURE_MIGRATE_LAB_REPLICATION_VM_SIZE = $ReplicationApplianceVmSize
-    $env:AZURE_MIGRATE_LAB_WINDOWS_SOURCE_VM_SIZE = $WindowsSourceVmSize
-    $env:AZURE_MIGRATE_LAB_LINUX_SOURCE_VM_SIZE = $LinuxSourceVmSize
+    $env:AZURE_MIGRATE_LAB_HYPERV_HOST_VM_SIZE = $HyperVHostVmSize
     $env:AZURE_MIGRATE_LAB_AUTO_SHUTDOWN_ENABLED = $AutoShutdownEnabled.ToString().ToLowerInvariant()
     $env:AZURE_MIGRATE_LAB_AUTO_SHUTDOWN_TIME = $AutoShutdownTime
     $env:AZURE_MIGRATE_LAB_AUTO_SHUTDOWN_TIME_ZONE = $AutoShutdownTimeZone
@@ -1710,11 +1842,25 @@ try {
     $existingWindowsVirtualMachines = @(Get-ExistingLabWindowsVirtualMachines `
         -SubscriptionId $SourceSubscriptionId `
         -Prefix $NamePrefix)
+    $existingHyperVHost = @(
+        $existingWindowsVirtualMachines | Where-Object {
+            $_.name -like "vm-$NamePrefix-hyperv-*"
+        }
+    ).Count -gt 0
+    $env:AZURE_MIGRATE_LAB_CONFIGURE_HYPERV_SECURITY_TYPE = (-not $existingHyperVHost).ToString().ToLowerInvariant()
+    if ($existingHyperVHost) {
+        Write-DeploymentDetail 'Existing Hyper-V host detected; omitting immutable securityType from incremental deployment.'
+    }
     $rotateExistingWindowsPasswords = Confirm-ExistingWindowsPasswordRotation `
         -VirtualMachines $existingWindowsVirtualMachines
 
     if (-not $SkipProviderRegistration) {
         Write-DeploymentPhase 'Checking required resource providers'
+        Ensure-AzureFeatureRegistered `
+            -SubscriptionId $SourceSubscriptionId `
+            -Namespace 'Microsoft.Compute' `
+            -FeatureName 'UseStandardSecurityType' `
+            -EnvironmentLabel 'source'
         foreach ($provider in 'Microsoft.Compute', 'Microsoft.Network', 'Microsoft.DevTestLab') {
             Ensure-AzureProviderRegistered `
                 -SubscriptionId $SourceSubscriptionId `
@@ -1740,6 +1886,7 @@ try {
         @(
             'DiscoveryApplianceVmSize'
             'ReplicationApplianceVmSize'
+            'HyperVHostVmSize'
             'WindowsSourceVmSize'
             'LinuxSourceVmSize'
         ) | Where-Object { $explicitParameterNames -contains $_ }
@@ -1753,6 +1900,7 @@ try {
             Name = 'Configured sizes'
             DiscoveryApplianceVmSize = $DiscoveryApplianceVmSize
             ReplicationApplianceVmSize = $ReplicationApplianceVmSize
+            HyperVHostVmSize = $HyperVHostVmSize
             WindowsSourceVmSize = $WindowsSourceVmSize
             LinuxSourceVmSize = $LinuxSourceVmSize
         }
@@ -1794,8 +1942,7 @@ try {
         $requestedVirtualMachines = New-RequestedVirtualMachineSet `
             -DiscoverySize $DiscoveryApplianceVmSize `
             -ReplicationSize $ReplicationApplianceVmSize `
-            -WindowsSourceSize $WindowsSourceVmSize `
-            -LinuxSourceSize $LinuxSourceVmSize
+            -HyperVHostSize $HyperVHostVmSize
         $targetVirtualMachines = New-TargetVirtualMachineSet `
             -WindowsSourceSize $WindowsSourceVmSize `
             -LinuxSourceSize $LinuxSourceVmSize
@@ -1886,17 +2033,36 @@ try {
             return
         }
 
+        foreach ($sourceResourceGroup in $existingSourceResourceGroups) {
+            Remove-LabJitNetworkAccessPolicy `
+                -SubscriptionId $SourceSubscriptionId `
+                -ResourceGroupName $sourceResourceGroup.name `
+                -Location $SourceLocation `
+                -Prefix $NamePrefix
+        }
+
         Write-DeploymentPhase 'Deploying the lab with Bicep'
-        Write-DeploymentDetail 'Azure CLI waits for ARM completion; an operation-by-operation summary follows.'
+        Write-DeploymentDetail 'Submitting the deployment; live ARM operation updates follow.'
         $deploymentOutput = @(& az deployment sub create `
             --subscription $TargetSubscriptionId `
             --name 'azure-migrate-lab' `
             --location $deploymentLocation `
             --template-file $templateFile `
             --parameters $parameterFile `
+            --no-wait `
+            --output none `
             --only-show-errors 2>&1)
         $deploymentExitCode = $LASTEXITCODE
-        $deploymentOutput | Out-Host
+        if ($deploymentExitCode -eq 0) {
+            $deployment = Wait-AzureSubscriptionDeployment `
+                -SubscriptionId $TargetSubscriptionId `
+                -DeploymentName 'azure-migrate-lab'
+            $deploymentOutput = @($deployment | ConvertTo-Json -Depth 100 -Compress)
+            $deploymentExitCode = if ($deployment.properties.provisioningState -eq 'Succeeded') { 0 } else { 1 }
+        }
+        else {
+            $deploymentOutput | Out-Host
+        }
         Show-AzureDeploymentOperations `
             -SubscriptionId $TargetSubscriptionId `
             -DeploymentName 'azure-migrate-lab'
@@ -1908,18 +2074,6 @@ try {
                     -VirtualMachines $existingWindowsVirtualMachines `
                     -Username $AdminUsername `
                     -Password $temporaryPassword
-            }
-            Write-Host 'Preparing and validating Linux Mobility Service prerequisites...' -ForegroundColor Cyan
-            $linuxPreparationOutput = @(& $powerShellPath `
-                -NoProfile `
-                -ExecutionPolicy Bypass `
-                -File (Join-Path $PSScriptRoot 'prepare-linux-mobility.ps1') `
-                -ConfigFile $configFilePath `
-                -DeploymentName 'azure-migrate-lab' 2>&1)
-            $linuxPreparationExitCode = $LASTEXITCODE
-            $linuxPreparationOutput | Out-Host
-            if ($linuxPreparationExitCode -ne 0) {
-                throw 'Infrastructure deployment succeeded, but Linux Mobility Service prerequisite preparation failed.'
             }
             Write-Host 'Deployment completed.' -ForegroundColor Green
             Write-DeploymentResult -Status 'Deployed'
@@ -1974,7 +2128,7 @@ finally {
     foreach ($variableName in $labEnvironmentVariables) {
         Remove-Item "Env:$variableName" -ErrorAction SilentlyContinue
     }
-    Remove-Variable temporaryPassword, sshPublicKey -ErrorAction SilentlyContinue
+    Remove-Variable temporaryPassword -ErrorAction SilentlyContinue
     if ([string]::IsNullOrWhiteSpace($previousAzureExtensionDirectory)) {
         Remove-Item Env:AZURE_EXTENSION_DIR -ErrorAction SilentlyContinue
     }

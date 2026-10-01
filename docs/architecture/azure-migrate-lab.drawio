@@ -1,0 +1,169 @@
+<mxfile host="app.diagrams.net" agent="drawio-doctor-package-builder" version="1" type="device">
+  <diagram id="deployment-network" name="Deployment and Network" data-evidence-refs="EVD-README EVD-MAIN EVD-SOURCE-NET EVD-SOURCE-COMPUTE EVD-TARGET EVD-NESTED">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="3680" pageHeight="1420" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="deployment-network--title" value="Azure Migrate Physical-Server Simulation Lab - Deployment and Network" style="text;html=1;fontSize=24;fontStyle=1;align=left;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="760" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--question" value="Reader question: Where does the lab run, and how do administration, discovery, replication, guest egress, and migration traverse it?" style="text;html=1;fontSize=12;align=left;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="950" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--metadata" value="Current architecture | Updated: 2026-10-01 | Owner: Repository maintainers | Version: 1.0" style="text;html=1;fontSize=10;align=right;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="930" y="60" width="560" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--evidence" value="Sources: EVD-README=README.md; EVD-MAIN=infra/main.bicep; EVD-SOURCE-NET=infra/modules/source-network.bicep; EVD-SOURCE-COMPUTE=infra/modules/source-compute.bicep; EVD-TARGET=infra/modules/target-network.bicep; EVD-NESTED=scripts/guest-assets/Provision-NestedGuests.ps1" style="text;html=1;fontSize=9;align=left;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1375" width="3600" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--legend" value="Blue solid = management/request | Green solid = data movement | Orange dashed = control-plane or guided action | Optional resources are labeled | Replication appliance sends HTTPS directly to Azure Migrate" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;fillColor=#FFFFFF;strokeColor=#B3BAC5;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1330" width="1000" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--source-subscription" value="Simulated source subscription | East US 2" style="swimlane;startSize=28;html=1;fillColor=#F7F9FC;strokeColor=#0078D4;fontStyle=1;" vertex="1" parent="1" data-evidence-refs="EVD-MAIN">
+          <mxGeometry x="40" y="260" width="2140" height="940" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--target-subscription" value="Migration target subscription | West US 2" style="swimlane;startSize=28;html=1;fillColor=#F7F9FC;strokeColor=#0078D4;fontStyle=1;" vertex="1" parent="1" data-evidence-refs="EVD-MAIN">
+          <mxGeometry x="2200" y="260" width="1420" height="940" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--source-resource-group" value="Source resource group" style="swimlane;startSize=28;html=1;fillColor=#F7F9FC;strokeColor=#0078D4;fontStyle=1;" vertex="1" parent="deployment-network--source-subscription" data-evidence-refs="EVD-SOURCE-NET EVD-SOURCE-COMPUTE">
+          <mxGeometry x="25.0" y="43.0" width="2090.0" height="872.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--target-resource-group" value="Target resource group" style="swimlane;startSize=28;html=1;fillColor=#F7F9FC;strokeColor=#0078D4;fontStyle=1;" vertex="1" parent="deployment-network--target-subscription" data-evidence-refs="EVD-TARGET">
+          <mxGeometry x="25.0" y="43.0" width="1370.0" height="872.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--source-vnet" value="Source Azure Virtual Network | 10.10.0.0/16" style="swimlane;startSize=28;html=1;fillColor=#F7F9FC;strokeColor=#0078D4;fontStyle=1;" vertex="1" parent="deployment-network--source-resource-group" data-evidence-refs="EVD-SOURCE-NET">
+          <mxGeometry x="375.0" y="43.0" width="1565.0" height="351.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--nested-environment" value="Inside Hyper-V host (expanded detail; not an Azure VNet)" style="swimlane;startSize=28;html=1;fillColor=#F7F9FC;strokeColor=#0078D4;fontStyle=1;" vertex="1" parent="deployment-network--source-resource-group" data-evidence-refs="EVD-NESTED">
+          <mxGeometry x="725.0" y="404.0" width="1215.0" height="351.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--target-vnet" value="Target Azure Virtual Network | 10.20.0.0/16" style="swimlane;startSize=28;html=1;fillColor=#F7F9FC;strokeColor=#0078D4;fontStyle=1;" vertex="1" parent="deployment-network--target-resource-group" data-evidence-refs="EVD-TARGET">
+          <mxGeometry x="25.0" y="223.5" width="1197.5" height="531.5" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--appliance-subnet" value="Appliance subnet | 10.10.1.0/24" style="swimlane;startSize=28;html=1;fillColor=#F7F9FC;strokeColor=#0078D4;fontStyle=1;" vertex="1" parent="deployment-network--source-vnet" data-evidence-refs="EVD-SOURCE-NET">
+          <mxGeometry x="25.0" y="43.0" width="683.33" height="231.5" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--hyperv-subnet" value="Hyper-V host subnet | 10.10.2.0/24" style="swimlane;startSize=28;html=1;fillColor=#F7F9FC;strokeColor=#0078D4;fontStyle=1;" vertex="1" parent="deployment-network--source-vnet" data-evidence-refs="EVD-SOURCE-NET">
+          <mxGeometry x="718.33" y="43.0" width="683.33" height="231.5" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--test-subnet" value="Isolated test subnet | 10.20.1.0/24" style="swimlane;startSize=28;html=1;fillColor=#F7F9FC;strokeColor=#0078D4;fontStyle=1;" vertex="1" parent="deployment-network--target-vnet" data-evidence-refs="EVD-TARGET">
+          <mxGeometry x="25.0" y="43.0" width="440.0" height="425.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--final-subnet" value="Isolated final subnet | 10.20.2.0/24" style="swimlane;startSize=28;html=1;fillColor=#F7F9FC;strokeColor=#0078D4;fontStyle=1;" vertex="1" parent="deployment-network--target-vnet" data-evidence-refs="EVD-TARGET">
+          <mxGeometry x="475.0" y="43.0" width="440.0" height="425.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--administrator" value="Administrator&#10;(allowed public CIDR)" style="shape=mxgraph.basic.person;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#0078D4;" vertex="1" parent="1" data-evidence-refs="EVD-README">
+          <mxGeometry x="40" y="140" width="150" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--internet" value="Internet" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#605E5C;strokeWidth=2;" vertex="1" parent="1" data-evidence-refs="EVD-README">
+          <mxGeometry x="400" y="140" width="150" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--azure-service-endpoints" value="Azure service endpoints&#10;HTTPS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#605E5C;strokeWidth=2;" vertex="1" parent="1" data-evidence-refs="EVD-README">
+          <mxGeometry x="760" y="140" width="150" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--source-public-ips" value="Public IP addresses&#10;attached to 3 Azure VMs + egress" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=https://app.diagrams.net/img/lib/azure2/networking/Public_IP_Addresses.svg;imageAspect=1;cloudProvider=azure;cloudIconSource=drawio-shape-index;" vertex="1" parent="deployment-network--source-resource-group" data-icon-provider="azure" data-icon-service="Public IP Addresses" data-evidence-refs="EVD-SOURCE-NET">
+          <mxGeometry x="32.5" y="48.12" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--source-nat" value="Azure NAT Gateway&#10;(source egress)" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=https://app.diagrams.net/img/lib/azure2/networking/NAT.svg;imageAspect=1;cloudProvider=azure;cloudIconSource=drawio-shape-index;" vertex="1" parent="deployment-network--source-resource-group" data-icon-provider="azure" data-icon-service="NAT" data-evidence-refs="EVD-SOURCE-NET">
+          <mxGeometry x="32.5" y="228.62" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--discovery-appliance" value="Discovery appliance VM&#10;10.10.1.10" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=https://app.diagrams.net/img/lib/azure2/compute/Virtual_Machine.svg;imageAspect=1;cloudProvider=azure;cloudIconSource=drawio-shape-index;" vertex="1" parent="deployment-network--appliance-subnet" data-icon-provider="azure" data-icon-service="Virtual Machine" data-evidence-refs="EVD-SOURCE-COMPUTE">
+          <mxGeometry x="11.0" y="30.75" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--replication-appliance" value="Replication appliance VM&#10;10.10.1.20 | Azure Migrate HTTPS" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=https://app.diagrams.net/img/lib/azure2/compute/Virtual_Machine.svg;imageAspect=1;cloudProvider=azure;cloudIconSource=drawio-shape-index;" vertex="1" parent="deployment-network--appliance-subnet" data-icon-provider="azure" data-icon-service="Virtual Machine" data-evidence-refs="EVD-SOURCE-COMPUTE">
+          <mxGeometry x="11.0" y="141.75" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--appliance-nsgs" value="Subnet and appliance NSGs" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=https://app.diagrams.net/img/lib/azure2/networking/Network_Security_Groups.svg;imageAspect=1;cloudProvider=azure;cloudIconSource=drawio-shape-index;" vertex="1" parent="deployment-network--appliance-subnet" data-icon-provider="azure" data-icon-service="Network Security Groups" data-evidence-refs="EVD-SOURCE-NET">
+          <mxGeometry x="407.0" y="30.75" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--appliance-route-table" value="UDR: 10.10.3.0/24&#10;next hop 10.10.2.10" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=https://app.diagrams.net/img/lib/azure2/networking/Route_Tables.svg;imageAspect=1;cloudProvider=azure;cloudIconSource=drawio-shape-index;" vertex="1" parent="deployment-network--appliance-subnet" data-icon-provider="azure" data-icon-service="Route Tables" data-evidence-refs="EVD-SOURCE-NET">
+          <mxGeometry x="407.0" y="141.75" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--hyperv-host" value="Hyper-V host VM&#10;10.10.2.10 | IP forwarding" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=https://app.diagrams.net/img/lib/azure2/compute/Virtual_Machine.svg;imageAspect=1;cloudProvider=azure;cloudIconSource=drawio-shape-index;" vertex="1" parent="deployment-network--hyperv-subnet" data-icon-provider="azure" data-icon-service="Virtual Machine" data-evidence-refs="EVD-SOURCE-COMPUTE">
+          <mxGeometry x="11.0" y="30.75" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--hyperv-nsg" value="Hyper-V host NSG" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=https://app.diagrams.net/img/lib/azure2/networking/Network_Security_Groups.svg;imageAspect=1;cloudProvider=azure;cloudIconSource=drawio-shape-index;" vertex="1" parent="deployment-network--hyperv-subnet" data-icon-provider="azure" data-icon-service="Network Security Groups" data-evidence-refs="EVD-SOURCE-NET">
+          <mxGeometry x="407.0" y="30.75" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--nested-routed" value="NestedRouted switch&#10;10.10.3.1/24" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#605E5C;strokeWidth=2;" vertex="1" parent="deployment-network--nested-environment" data-evidence-refs="EVD-NESTED">
+          <mxGeometry x="20.0" y="43.25" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--windows-guest" value="source-win01&#10;10.10.3.10" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#605E5C;strokeWidth=2;" vertex="1" parent="deployment-network--nested-environment" data-evidence-refs="EVD-NESTED">
+          <mxGeometry x="470.0" y="43.25" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--linux-guest" value="source-linux01&#10;10.10.3.20" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#605E5C;strokeWidth=2;" vertex="1" parent="deployment-network--nested-environment" data-evidence-refs="EVD-NESTED">
+          <mxGeometry x="470.0" y="204.25" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--nested-nat" value="NestedNat switch&#10;192.168.250.1/24" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#605E5C;strokeWidth=2;" vertex="1" parent="deployment-network--nested-environment" data-evidence-refs="EVD-NESTED">
+          <mxGeometry x="920.0" y="123.75" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--azure-migrate" value="Azure Migrate project&#10;+ server solutions (optional)" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=https://app.diagrams.net/img/lib/azure2/migrate/Azure_Migrate.svg;imageAspect=1;cloudProvider=azure;cloudIconSource=drawio-shape-index;" vertex="1" parent="deployment-network--target-resource-group" data-icon-provider="azure" data-icon-service="Azure Migrate" data-evidence-refs="EVD-TARGET">
+          <mxGeometry x="203.75" y="48.12" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--target-nat" value="Azure NAT Gateway&#10;optional egress for both subnets" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=https://app.diagrams.net/img/lib/azure2/networking/NAT.svg;imageAspect=1;cloudProvider=azure;cloudIconSource=drawio-shape-index;" vertex="1" parent="deployment-network--target-resource-group" data-icon-provider="azure" data-icon-service="NAT" data-evidence-refs="EVD-TARGET">
+          <mxGeometry x="893.75" y="48.12" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--test-nsg" value="Test subnet NSG" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=https://app.diagrams.net/img/lib/azure2/networking/Network_Security_Groups.svg;imageAspect=1;cloudProvider=azure;cloudIconSource=drawio-shape-index;" vertex="1" parent="deployment-network--test-subnet" data-icon-provider="azure" data-icon-service="Network Security Groups" data-evidence-refs="EVD-TARGET">
+          <mxGeometry x="5.0" y="108.5" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--test-destination" value="Test migration destination" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#605E5C;strokeWidth=2;" vertex="1" parent="deployment-network--test-subnet" data-evidence-refs="EVD-README">
+          <mxGeometry x="245.0" y="249.17" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--final-nsg" value="Final subnet NSG" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=12;image=https://app.diagrams.net/img/lib/azure2/networking/Network_Security_Groups.svg;imageAspect=1;cloudProvider=azure;cloudIconSource=drawio-shape-index;" vertex="1" parent="deployment-network--final-subnet" data-icon-provider="azure" data-icon-service="Network Security Groups" data-evidence-refs="EVD-TARGET">
+          <mxGeometry x="245.0" y="108.5" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--final-destination" value="Final migration destination" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#605E5C;strokeWidth=2;" vertex="1" parent="deployment-network--final-subnet" data-evidence-refs="EVD-README">
+          <mxGeometry x="5.0" y="249.17" width="150.0" height="70.0" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--admin-to-public-ips" value="RDP / appliance UI" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#D83B01;strokeWidth=2;dashed=1;dashPattern=3 3;" edge="1" parent="1" source="deployment-network--administrator" target="deployment-network--source-public-ips" data-evidence-refs="EVD-README EVD-SOURCE-NET">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--discovery-to-route" value="Discovery traffic" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#0078D4;strokeWidth=2;" edge="1" parent="deployment-network--appliance-subnet" source="deployment-network--discovery-appliance" target="deployment-network--appliance-route-table" data-evidence-refs="EVD-SOURCE-NET">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--replication-to-route" value="Mobility push" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#0078D4;strokeWidth=2;" edge="1" parent="deployment-network--appliance-subnet" source="deployment-network--replication-appliance" target="deployment-network--appliance-route-table" data-evidence-refs="EVD-SOURCE-NET">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--route-to-host" value="Next hop 10.10.2.10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#0078D4;strokeWidth=2;" edge="1" parent="deployment-network--source-vnet" source="deployment-network--appliance-route-table" target="deployment-network--hyperv-host" data-evidence-refs="EVD-SOURCE-NET">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--host-to-routed-switch" value="IP forwarding" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#0078D4;strokeWidth=2;" edge="1" parent="deployment-network--source-resource-group" source="deployment-network--hyperv-host" target="deployment-network--nested-routed" data-evidence-refs="EVD-NESTED">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--routed-to-windows" value="Windows routed NIC" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#0078D4;strokeWidth=2;" edge="1" parent="deployment-network--nested-environment" source="deployment-network--nested-routed" target="deployment-network--windows-guest" data-evidence-refs="EVD-NESTED">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--routed-to-linux" value="Linux routed NIC" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#0078D4;strokeWidth=2;" edge="1" parent="deployment-network--nested-environment" source="deployment-network--nested-routed" target="deployment-network--linux-guest" data-evidence-refs="EVD-NESTED">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--routed-to-replication" value="Mobility HTTPS 443/9443" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#107C10;strokeWidth=2;" edge="1" parent="deployment-network--source-resource-group" source="deployment-network--nested-routed" target="deployment-network--replication-appliance" data-evidence-refs="EVD-README EVD-SOURCE-NET">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--windows-to-nested-nat" value="Guest egress" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#107C10;strokeWidth=2;" edge="1" parent="deployment-network--nested-environment" source="deployment-network--windows-guest" target="deployment-network--nested-nat" data-evidence-refs="EVD-NESTED">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--linux-to-nested-nat" value="Guest egress" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#107C10;strokeWidth=2;" edge="1" parent="deployment-network--nested-environment" source="deployment-network--linux-guest" target="deployment-network--nested-nat" data-evidence-refs="EVD-NESTED">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--nested-nat-to-host" value="Host WinNAT" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#107C10;strokeWidth=2;" edge="1" parent="deployment-network--source-resource-group" source="deployment-network--nested-nat" target="deployment-network--hyperv-host" data-evidence-refs="EVD-NESTED">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--source-nat-to-internet" value="Outbound internet" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#107C10;strokeWidth=2;" edge="1" parent="1" source="deployment-network--source-nat" target="deployment-network--internet" data-evidence-refs="EVD-SOURCE-NET">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--discovery-to-migrate" value="Inventory / performance" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#107C10;strokeWidth=2;" edge="1" parent="1" source="deployment-network--discovery-appliance" target="deployment-network--azure-service-endpoints" data-evidence-refs="EVD-README">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--endpoints-to-migrate" value="Azure Migrate HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#107C10;strokeWidth=2;" edge="1" parent="1" source="deployment-network--azure-service-endpoints" target="deployment-network--azure-migrate" data-evidence-refs="EVD-README">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--migrate-to-test" value="Guided test migration" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#D83B01;strokeWidth=2;dashed=1;dashPattern=3 3;" edge="1" parent="deployment-network--target-resource-group" source="deployment-network--azure-migrate" target="deployment-network--test-destination" data-evidence-refs="EVD-README">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="deployment-network--migrate-to-final" value="Guided final migration" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#D83B01;strokeWidth=2;dashed=1;dashPattern=3 3;" edge="1" parent="deployment-network--target-resource-group" source="deployment-network--azure-migrate" target="deployment-network--final-destination" data-evidence-refs="EVD-README">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

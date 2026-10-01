@@ -1,0 +1,670 @@
+{
+  "schemaVersion": 1,
+  "package": {
+    "title": "Azure Migrate Physical-Server Simulation Lab",
+    "architectureState": "Current",
+    "owner": "Repository maintainers",
+    "version": "1.0",
+    "updated": "2026-10-01",
+    "approval": {
+      "status": "Approved",
+      "approvedBy": "Repository maintainer",
+      "approvedAt": "2026-10-01",
+      "renderReview": "Passed"
+    },
+    "evidence": [
+      {
+        "id": "EVD-README",
+        "path": "README.md",
+        "establishes": "Lab purpose, documented topology, addresses, and migration workflow"
+      },
+      {
+        "id": "EVD-MAIN",
+        "path": "infra/main.bicep",
+        "establishes": "Two-subscription deployment and source/target Azure regions"
+      },
+      {
+        "id": "EVD-SOURCE-NET",
+        "path": "infra/modules/source-network.bicep",
+        "establishes": "Source VNet, subnets, NSGs, route table, public IPs, and NAT Gateway"
+      },
+      {
+        "id": "EVD-SOURCE-COMPUTE",
+        "path": "infra/modules/source-compute.bicep",
+        "establishes": "Discovery, replication, and Hyper-V virtual machines and their network placement"
+      },
+      {
+        "id": "EVD-TARGET",
+        "path": "infra/modules/target-network.bicep",
+        "establishes": "Target VNet, isolated test/final subnets, NSGs, optional NAT Gateway, and optional Azure Migrate project"
+      },
+      {
+        "id": "EVD-NESTED",
+        "path": "scripts/guest-assets/Provision-NestedGuests.ps1",
+        "establishes": "Nested routed and NAT switches, guest addressing, and guest internet path"
+      }
+    ]
+  },
+  "pages": [
+    {
+      "id": "deployment-network",
+      "name": "Deployment and Network",
+      "viewType": "network",
+      "question": "Where does the lab run, and how do administration, discovery, replication, guest egress, and migration traverse it?",
+      "evidenceRefs": [
+        "EVD-README",
+        "EVD-MAIN",
+        "EVD-SOURCE-NET",
+        "EVD-SOURCE-COMPUTE",
+        "EVD-TARGET",
+        "EVD-NESTED"
+      ],
+      "layout": {
+        "columns": 20,
+        "rows": 10
+      },
+      "legend": [
+        "Blue solid = management/request",
+        "Green solid = data movement",
+        "Orange dashed = control-plane or guided action",
+        "Optional resources are labeled",
+        "Replication appliance sends HTTPS directly to Azure Migrate"
+      ],
+      "containers": [
+        {
+          "id": "source-subscription",
+          "label": "Simulated source subscription | East US 2",
+          "row": 1,
+          "column": 0,
+          "rowSpan": 8,
+          "columnSpan": 12,
+          "layout": {
+            "columns": 12,
+            "rows": 8
+          },
+          "evidenceRefs": [
+            "EVD-MAIN"
+          ]
+        },
+        {
+          "id": "source-resource-group",
+          "label": "Source resource group",
+          "parent": "source-subscription",
+          "row": 0,
+          "column": 0,
+          "rowSpan": 8,
+          "columnSpan": 12,
+          "layout": {
+            "columns": 12,
+            "rows": 8
+          },
+          "evidenceRefs": [
+            "EVD-SOURCE-NET",
+            "EVD-SOURCE-COMPUTE"
+          ]
+        },
+        {
+          "id": "source-vnet",
+          "label": "Source Azure Virtual Network | 10.10.0.0/16",
+          "parent": "source-resource-group",
+          "row": 0,
+          "column": 2,
+          "rowSpan": 4,
+          "columnSpan": 9,
+          "layout": {
+            "columns": 9,
+            "rows": 4
+          },
+          "evidenceRefs": [
+            "EVD-SOURCE-NET"
+          ]
+        },
+        {
+          "id": "appliance-subnet",
+          "label": "Appliance subnet | 10.10.1.0/24",
+          "parent": "source-vnet",
+          "row": 0,
+          "column": 0,
+          "rowSpan": 3,
+          "columnSpan": 4,
+          "layout": {
+            "columns": 5,
+            "rows": 4
+          },
+          "evidenceRefs": [
+            "EVD-SOURCE-NET"
+          ]
+        },
+        {
+          "id": "hyperv-subnet",
+          "label": "Hyper-V host subnet | 10.10.2.0/24",
+          "parent": "source-vnet",
+          "row": 0,
+          "column": 4,
+          "rowSpan": 3,
+          "columnSpan": 4,
+          "layout": {
+            "columns": 5,
+            "rows": 4
+          },
+          "evidenceRefs": [
+            "EVD-SOURCE-NET"
+          ]
+        },
+        {
+          "id": "nested-environment",
+          "label": "Inside Hyper-V host (expanded detail; not an Azure VNet)",
+          "parent": "source-resource-group",
+          "row": 4,
+          "column": 4,
+          "rowSpan": 4,
+          "columnSpan": 7,
+          "layout": {
+            "columns": 8,
+            "rows": 4
+          },
+          "evidenceRefs": [
+            "EVD-NESTED"
+          ]
+        },
+        {
+          "id": "target-subscription",
+          "label": "Migration target subscription | West US 2",
+          "row": 1,
+          "column": 12,
+          "rowSpan": 8,
+          "columnSpan": 8,
+          "layout": {
+            "columns": 8,
+            "rows": 8
+          },
+          "evidenceRefs": [
+            "EVD-MAIN"
+          ]
+        },
+        {
+          "id": "target-resource-group",
+          "label": "Target resource group",
+          "parent": "target-subscription",
+          "row": 0,
+          "column": 0,
+          "rowSpan": 8,
+          "columnSpan": 8,
+          "layout": {
+            "columns": 8,
+            "rows": 8
+          },
+          "evidenceRefs": [
+            "EVD-TARGET"
+          ]
+        },
+        {
+          "id": "target-vnet",
+          "label": "Target Azure Virtual Network | 10.20.0.0/16",
+          "parent": "target-resource-group",
+          "row": 2,
+          "column": 0,
+          "rowSpan": 6,
+          "columnSpan": 7,
+          "layout": {
+            "columns": 8,
+            "rows": 6
+          },
+          "evidenceRefs": [
+            "EVD-TARGET"
+          ]
+        },
+        {
+          "id": "test-subnet",
+          "label": "Isolated test subnet | 10.20.1.0/24",
+          "parent": "target-vnet",
+          "row": 0,
+          "column": 0,
+          "rowSpan": 5,
+          "columnSpan": 3,
+          "layout": {
+            "columns": 4,
+            "rows": 6
+          },
+          "evidenceRefs": [
+            "EVD-TARGET"
+          ]
+        },
+        {
+          "id": "final-subnet",
+          "label": "Isolated final subnet | 10.20.2.0/24",
+          "parent": "target-vnet",
+          "row": 0,
+          "column": 3,
+          "rowSpan": 5,
+          "columnSpan": 3,
+          "layout": {
+            "columns": 4,
+            "rows": 6
+          },
+          "evidenceRefs": [
+            "EVD-TARGET"
+          ]
+        }
+      ],
+      "nodes": [
+        {
+          "id": "administrator",
+          "kind": "actor",
+          "label": "Administrator\n(allowed public CIDR)",
+          "row": 0,
+          "column": 0,
+          "evidenceRefs": [
+            "EVD-README"
+          ]
+        },
+        {
+          "id": "internet",
+          "kind": "component",
+          "label": "Internet",
+          "row": 0,
+          "column": 2,
+          "evidenceRefs": [
+            "EVD-README"
+          ]
+        },
+        {
+          "id": "azure-service-endpoints",
+          "kind": "component",
+          "label": "Azure service endpoints\nHTTPS",
+          "row": 0,
+          "column": 4,
+          "evidenceRefs": [
+            "EVD-README"
+          ]
+        },
+        {
+          "id": "source-public-ips",
+          "kind": "cloud-service",
+          "provider": "azure",
+          "service": "Public IP Addresses",
+          "label": "Public IP addresses\nattached to 3 Azure VMs + egress",
+          "parent": "source-resource-group",
+          "row": 0,
+          "column": 0,
+          "evidenceRefs": [
+            "EVD-SOURCE-NET"
+          ]
+        },
+        {
+          "id": "source-nat",
+          "kind": "cloud-service",
+          "provider": "azure",
+          "service": "NAT",
+          "label": "Azure NAT Gateway\n(source egress)",
+          "parent": "source-resource-group",
+          "row": 2,
+          "column": 0,
+          "evidenceRefs": [
+            "EVD-SOURCE-NET"
+          ]
+        },
+        {
+          "id": "discovery-appliance",
+          "kind": "cloud-service",
+          "provider": "azure",
+          "service": "Virtual Machine",
+          "label": "Discovery appliance VM\n10.10.1.10",
+          "parent": "appliance-subnet",
+          "row": 0,
+          "column": 0,
+          "evidenceRefs": [
+            "EVD-SOURCE-COMPUTE"
+          ]
+        },
+        {
+          "id": "replication-appliance",
+          "kind": "cloud-service",
+          "provider": "azure",
+          "service": "Virtual Machine",
+          "label": "Replication appliance VM\n10.10.1.20 | Azure Migrate HTTPS",
+          "parent": "appliance-subnet",
+          "row": 2,
+          "column": 0,
+          "evidenceRefs": [
+            "EVD-SOURCE-COMPUTE"
+          ]
+        },
+        {
+          "id": "appliance-nsgs",
+          "kind": "cloud-service",
+          "provider": "azure",
+          "service": "Network Security Groups",
+          "label": "Subnet and appliance NSGs",
+          "parent": "appliance-subnet",
+          "row": 0,
+          "column": 3,
+          "evidenceRefs": [
+            "EVD-SOURCE-NET"
+          ]
+        },
+        {
+          "id": "appliance-route-table",
+          "kind": "cloud-service",
+          "provider": "azure",
+          "service": "Route Tables",
+          "label": "UDR: 10.10.3.0/24\nnext hop 10.10.2.10",
+          "parent": "appliance-subnet",
+          "row": 2,
+          "column": 3,
+          "evidenceRefs": [
+            "EVD-SOURCE-NET"
+          ]
+        },
+        {
+          "id": "hyperv-host",
+          "kind": "cloud-service",
+          "provider": "azure",
+          "service": "Virtual Machine",
+          "label": "Hyper-V host VM\n10.10.2.10 | IP forwarding",
+          "parent": "hyperv-subnet",
+          "row": 0,
+          "column": 0,
+          "evidenceRefs": [
+            "EVD-SOURCE-COMPUTE"
+          ]
+        },
+        {
+          "id": "hyperv-nsg",
+          "kind": "cloud-service",
+          "provider": "azure",
+          "service": "Network Security Groups",
+          "label": "Hyper-V host NSG",
+          "parent": "hyperv-subnet",
+          "row": 0,
+          "column": 3,
+          "evidenceRefs": [
+            "EVD-SOURCE-NET"
+          ]
+        },
+        {
+          "id": "nested-routed",
+          "kind": "component",
+          "label": "NestedRouted switch\n10.10.3.1/24",
+          "parent": "nested-environment",
+          "row": 0,
+          "column": 0,
+          "evidenceRefs": [
+            "EVD-NESTED"
+          ]
+        },
+        {
+          "id": "windows-guest",
+          "kind": "component",
+          "label": "source-win01\n10.10.3.10",
+          "parent": "nested-environment",
+          "row": 0,
+          "column": 3,
+          "evidenceRefs": [
+            "EVD-NESTED"
+          ]
+        },
+        {
+          "id": "linux-guest",
+          "kind": "component",
+          "label": "source-linux01\n10.10.3.20",
+          "parent": "nested-environment",
+          "row": 2,
+          "column": 3,
+          "evidenceRefs": [
+            "EVD-NESTED"
+          ]
+        },
+        {
+          "id": "nested-nat",
+          "kind": "component",
+          "label": "NestedNat switch\n192.168.250.1/24",
+          "parent": "nested-environment",
+          "row": 1,
+          "column": 6,
+          "evidenceRefs": [
+            "EVD-NESTED"
+          ]
+        },
+        {
+          "id": "azure-migrate",
+          "kind": "cloud-service",
+          "provider": "azure",
+          "service": "Azure Migrate",
+          "label": "Azure Migrate project\n+ server solutions (optional)",
+          "parent": "target-resource-group",
+          "row": 0,
+          "column": 1,
+          "evidenceRefs": [
+            "EVD-TARGET"
+          ]
+        },
+        {
+          "id": "target-nat",
+          "kind": "cloud-service",
+          "provider": "azure",
+          "service": "NAT",
+          "label": "Azure NAT Gateway\noptional egress for both subnets",
+          "parent": "target-resource-group",
+          "row": 0,
+          "column": 5,
+          "evidenceRefs": [
+            "EVD-TARGET"
+          ]
+        },
+        {
+          "id": "test-nsg",
+          "kind": "cloud-service",
+          "provider": "azure",
+          "service": "Network Security Groups",
+          "label": "Test subnet NSG",
+          "parent": "test-subnet",
+          "row": 1,
+          "column": 0,
+          "evidenceRefs": [
+            "EVD-TARGET"
+          ]
+        },
+        {
+          "id": "test-destination",
+          "kind": "component",
+          "label": "Test migration destination",
+          "parent": "test-subnet",
+          "row": 3,
+          "column": 2,
+          "evidenceRefs": [
+            "EVD-README"
+          ]
+        },
+        {
+          "id": "final-nsg",
+          "kind": "cloud-service",
+          "provider": "azure",
+          "service": "Network Security Groups",
+          "label": "Final subnet NSG",
+          "parent": "final-subnet",
+          "row": 1,
+          "column": 2,
+          "evidenceRefs": [
+            "EVD-TARGET"
+          ]
+        },
+        {
+          "id": "final-destination",
+          "kind": "component",
+          "label": "Final migration destination",
+          "parent": "final-subnet",
+          "row": 3,
+          "column": 0,
+          "evidenceRefs": [
+            "EVD-README"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "admin-to-public-ips",
+          "source": "administrator",
+          "target": "source-public-ips",
+          "label": "RDP / appliance UI",
+          "kind": "control",
+          "evidenceRefs": [
+            "EVD-README",
+            "EVD-SOURCE-NET"
+          ]
+        },
+        {
+          "id": "discovery-to-route",
+          "source": "discovery-appliance",
+          "target": "appliance-route-table",
+          "label": "Discovery traffic",
+          "kind": "request",
+          "evidenceRefs": [
+            "EVD-SOURCE-NET"
+          ]
+        },
+        {
+          "id": "replication-to-route",
+          "source": "replication-appliance",
+          "target": "appliance-route-table",
+          "label": "Mobility push",
+          "kind": "request",
+          "evidenceRefs": [
+            "EVD-SOURCE-NET"
+          ]
+        },
+        {
+          "id": "route-to-host",
+          "source": "appliance-route-table",
+          "target": "hyperv-host",
+          "label": "Next hop 10.10.2.10",
+          "kind": "request",
+          "evidenceRefs": [
+            "EVD-SOURCE-NET"
+          ]
+        },
+        {
+          "id": "host-to-routed-switch",
+          "source": "hyperv-host",
+          "target": "nested-routed",
+          "label": "IP forwarding",
+          "kind": "request",
+          "evidenceRefs": [
+            "EVD-NESTED"
+          ]
+        },
+        {
+          "id": "routed-to-windows",
+          "source": "nested-routed",
+          "target": "windows-guest",
+          "label": "Windows routed NIC",
+          "kind": "request",
+          "evidenceRefs": [
+            "EVD-NESTED"
+          ]
+        },
+        {
+          "id": "routed-to-linux",
+          "source": "nested-routed",
+          "target": "linux-guest",
+          "label": "Linux routed NIC",
+          "kind": "request",
+          "evidenceRefs": [
+            "EVD-NESTED"
+          ]
+        },
+        {
+          "id": "routed-to-replication",
+          "source": "nested-routed",
+          "target": "replication-appliance",
+          "label": "Mobility HTTPS 443/9443",
+          "kind": "data",
+          "evidenceRefs": [
+            "EVD-README",
+            "EVD-SOURCE-NET"
+          ]
+        },
+        {
+          "id": "windows-to-nested-nat",
+          "source": "windows-guest",
+          "target": "nested-nat",
+          "label": "Guest egress",
+          "kind": "data",
+          "evidenceRefs": [
+            "EVD-NESTED"
+          ]
+        },
+        {
+          "id": "linux-to-nested-nat",
+          "source": "linux-guest",
+          "target": "nested-nat",
+          "label": "Guest egress",
+          "kind": "data",
+          "evidenceRefs": [
+            "EVD-NESTED"
+          ]
+        },
+        {
+          "id": "nested-nat-to-host",
+          "source": "nested-nat",
+          "target": "hyperv-host",
+          "label": "Host WinNAT",
+          "kind": "data",
+          "evidenceRefs": [
+            "EVD-NESTED"
+          ]
+        },
+        {
+          "id": "source-nat-to-internet",
+          "source": "source-nat",
+          "target": "internet",
+          "label": "Outbound internet",
+          "kind": "data",
+          "evidenceRefs": [
+            "EVD-SOURCE-NET"
+          ]
+        },
+        {
+          "id": "discovery-to-migrate",
+          "source": "discovery-appliance",
+          "target": "azure-service-endpoints",
+          "label": "Inventory / performance",
+          "kind": "data",
+          "evidenceRefs": [
+            "EVD-README"
+          ]
+        },
+        {
+          "id": "endpoints-to-migrate",
+          "source": "azure-service-endpoints",
+          "target": "azure-migrate",
+          "label": "Azure Migrate HTTPS",
+          "kind": "data",
+          "evidenceRefs": [
+            "EVD-README"
+          ]
+        },
+        {
+          "id": "migrate-to-test",
+          "source": "azure-migrate",
+          "target": "test-destination",
+          "label": "Guided test migration",
+          "kind": "control",
+          "evidenceRefs": [
+            "EVD-README"
+          ]
+        },
+        {
+          "id": "migrate-to-final",
+          "source": "azure-migrate",
+          "target": "final-destination",
+          "label": "Guided final migration",
+          "kind": "control",
+          "evidenceRefs": [
+            "EVD-README"
+          ]
+        }
+      ]
+    }
+  ]
+}
